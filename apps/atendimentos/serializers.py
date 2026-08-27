@@ -74,6 +74,7 @@ class AcaoItineranteSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'titulo', 'descricao', 'local', 'data', 'observacoes',
             'unidade', 'unidade_nome', 'responsavel', 'responsavel_nome', 'ativa',
+            'participantes', 'cidadaos_atendidos', 'beneficios_concedidos', 'casos_abertos', 'concluida',
         ]
 
 

@@ -108,12 +108,11 @@ def _cliente_de_chaves() -> jwt.PyJWKClient:
 
 def validar_token(access_token: str) -> dict:
     """
-    Confere assinatura, emissor e validade — e devolve as claims.
+    Confere assinatura, emissor, audiencia e validade — e devolve as claims.
 
-    Decodificar sem validar seria aceitar qualquer token forjado. A audiencia
-    nao e verificada porque o Keycloak emite `aud: account` para o fluxo padrao;
-    o que amarra o token a este sistema e o `resource_access` do proprio client,
-    lido depois.
+    A audiencia e verificada contra 'account' (padrao do Keycloak para o fluxo
+    de authorization code). A amarracao ao client especifico e feita depois via
+    `resource_access` no servicos.py.
     """
     try:
         chave = _cliente_de_chaves().get_signing_key_from_jwt(access_token)
@@ -121,9 +120,9 @@ def validar_token(access_token: str) -> dict:
             access_token,
             chave.key,
             algorithms=['RS256'],
+            audience='account',
             issuer=_base_realm(),
             leeway=60,
-            options={'verify_aud': False},
         )
     except jwt.PyJWTError as erro:
         raise ErroDoKeycloak(f'Token do Tefé Cidadão inválido: {erro}') from erro

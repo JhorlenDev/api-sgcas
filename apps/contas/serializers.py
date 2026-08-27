@@ -39,7 +39,7 @@ class OperadorNaListaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Operador
-        fields = ['id', 'nome', 'email', 'cpf', 'papel', 'ativo', 'unidade', 'unidade_nome']
+        fields = ['id', 'nome', 'email', 'papel', 'ativo', 'unidade', 'unidade_nome']
 
 
 class AtualizarOperadorSerializer(serializers.Serializer):

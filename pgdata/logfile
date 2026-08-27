@@ -1,0 +1,25 @@
+2026-08-27 15:05:47.055 -04 [19292] LOG:  starting PostgreSQL 16.15, compiled by Visual C++ build 1944, 64-bit
+2026-08-27 15:05:47.059 -04 [19292] LOG:  listening on IPv6 address "::1", port 5434
+2026-08-27 15:05:47.059 -04 [19292] LOG:  listening on IPv4 address "127.0.0.1", port 5434
+2026-08-27 15:05:47.100 -04 [23040] LOG:  database system was shut down at 2026-08-27 15:04:54 -04
+2026-08-27 15:05:47.118 -04 [19292] LOG:  database system is ready to accept connections
+2026-08-27 15:06:47.148 -04 [19292] LOG:  server process (PID 19184) was terminated by exception 0xC0000142
+2026-08-27 15:06:47.148 -04 [19292] HINT:  See C include file "ntstatus.h" for a description of the hexadecimal value.
+2026-08-27 15:06:47.148 -04 [19292] LOG:  terminating any other active server processes
+2026-08-27 15:06:47.154 -04 [19292] LOG:  all server processes terminated; reinitializing
+2026-08-27 15:06:47.172 -04 [19292] LOG:  shutting down due to startup process failure
+2026-08-27 15:06:47.175 -04 [19292] LOG:  database system is shut down
+2026-08-27 15:07:13.911 -04 [19248] LOG:  starting PostgreSQL 16.15, compiled by Visual C++ build 1944, 64-bit
+2026-08-27 15:07:13.918 -04 [19248] LOG:  listening on IPv6 address "::1", port 5434
+2026-08-27 15:07:13.918 -04 [19248] LOG:  listening on IPv4 address "127.0.0.1", port 5434
+2026-08-27 15:07:13.964 -04 [15584] LOG:  database system was interrupted; last known up at 2026-08-27 15:05:47 -04
+2026-08-27 15:07:20.009 -04 [15584] LOG:  could not open file "./logfile": sharing violation
+2026-08-27 15:07:20.009 -04 [15584] DETAIL:  Continuing to retry for 30 seconds.
+2026-08-27 15:07:20.009 -04 [15584] HINT:  You might have antivirus, backup, or similar software interfering with the database system.
+2026-08-27 15:07:43.746 -04 [24852] LOG:  starting PostgreSQL 16.15, compiled by Visual C++ build 1944, 64-bit
+2026-08-27 15:07:43.750 -04 [24852] LOG:  listening on IPv6 address "::1", port 5434
+2026-08-27 15:07:43.750 -04 [24852] LOG:  listening on IPv4 address "127.0.0.1", port 5434
+2026-08-27 15:07:43.789 -04 [20344] LOG:  database system was interrupted; last known up at 2026-08-27 15:05:47 -04
+2026-08-27 15:07:50.005 -04 [20344] LOG:  could not open file "./logfile": sharing violation
+2026-08-27 15:07:50.005 -04 [20344] DETAIL:  Continuing to retry for 30 seconds.
+2026-08-27 15:07:50.005 -04 [20344] HINT:  You might have antivirus, backup, or similar software interfering with the database system.

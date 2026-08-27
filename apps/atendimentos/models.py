@@ -220,6 +220,10 @@ class AcaoItinerante(models.Model):
     # Contagem manual herdada. Mantida para o histórico já registrado; os
     # números novos saem da contagem real dos vínculos.
     participantes = models.IntegerField(db_column='attendees', default=0)
+    cidadaos_atendidos = models.IntegerField(db_column='attendedCitizens', default=0)
+    beneficios_concedidos = models.IntegerField(db_column='benefitsGranted', default=0)
+    casos_abertos = models.IntegerField(db_column='casesOpened', default=0)
+    concluida = models.BooleanField(db_column='isCompleted', default=False)
 
     responsavel = models.ForeignKey(
         'contas.Operador', models.DO_NOTHING, db_column='userId',
@@ -259,8 +263,13 @@ class AcaoItinerante(models.Model):
 
         return {
             'cidadaos_cadastrados': Cidadao.vigentes.filter(acao_itinerante=self).count(),
-            'casos_abertos': Caso.vigentes.filter(acao_itinerante=self).count(),
-            'beneficios_concedidos': BeneficioEventual.vigentes.filter(acao_itinerante=self).count(),
+            'casos_abertos_vinculados': Caso.vigentes.filter(acao_itinerante=self).count(),
+            'beneficios_vinculados': BeneficioEventual.vigentes.filter(acao_itinerante=self).count(),
+            'participantes': self.participantes,
+            'cidadaos_atendidos': self.cidadaos_atendidos,
+            'beneficios_concedidos': self.beneficios_concedidos,
+            'casos_abertos': self.casos_abertos,
+            'concluida': self.concluida,
         }
 
 
