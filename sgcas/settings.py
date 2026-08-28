@@ -62,6 +62,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.contas.throttle.ThrottleAuth',
     # Depois da autenticacao: precisa de `request.user` resolvido para saber
     # quem agiu.
     'apps.auditoria.middleware.TrilhaDeAuditoria',
@@ -129,6 +130,10 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = 'no-referrer'
 X_FRAME_OPTIONS = 'DENY'
 
+SESSION_COOKIE_AGE = 28800  # 8 horas
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+SESSION_SAVE_EVERY_REQUEST = True
+
 STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -154,6 +159,11 @@ LOGGING = {
     },
     'loggers': {
         'apps.contas': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'apps.auditoria': {
             'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,

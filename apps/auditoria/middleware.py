@@ -66,6 +66,8 @@ class TrilhaDeAuditoria:
         caminho = request.path
         if not caminho.startswith('/api/') or caminho.startswith(IGNORADAS):
             return False
+        if resposta.status_code in (401, 403):
+            return True
         if resposta.status_code >= 400:
             return False
         if request.method == 'GET':
