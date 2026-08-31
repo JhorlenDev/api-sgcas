@@ -33,7 +33,22 @@ class TrilhaDeAuditoria(CenarioBase):
         cliente.get('/api/auth/me')
         self.assertEqual(RegistroDeAuditoria.objects.count(), antes)
 
-    def test_requisicao_recusada_nao_vira_registro(self):
-        antes = RegistroDeAuditoria.objects.count()
+    def test_requisicao_recusada_vira_registro_de_acesso_negado(self):
+        # A tentativa barrada fica na trilha — é sinal de segurança. Mas com
+        # ação própria: gravá-la como READ afirmaria que a pessoa viu o
+        # prontuário, quando o acesso foi justamente impedido.
+        resposta = self.como(self.recepcionista).get(f'/api/citizens/{self.cidadao.id}')
+        self.assertEqual(resposta.status_code, 403)
+
+        registro = RegistroDeAuditoria.objects.get()
+        self.assertEqual(registro.acao, 'ACESSO_NEGADO')
+        self.assertEqual(registro.operador_id, self.recepcionista.id)
+        self.assertEqual(registro.entidade, 'citizens')
+
+    def test_acesso_negado_nao_se_confunde_com_leitura(self):
+        # Quem pergunta "quem consultou os dados desta pessoa" filtra por READ,
+        # e a tentativa recusada não pode aparecer nessa resposta.
         self.como(self.recepcionista).get(f'/api/citizens/{self.cidadao.id}')  # 403
-        self.assertEqual(RegistroDeAuditoria.objects.count(), antes)
+        self.assertFalse(
+            RegistroDeAuditoria.objects.filter(acao='READ', entidade='citizens').exists()
+        )

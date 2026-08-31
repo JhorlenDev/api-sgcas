@@ -32,6 +32,13 @@ IGNORADAS = ('/api/auditoria', '/api/auth/keycloak', '/api/auth/logout')
 
 ACOES = {'GET': 'READ', 'POST': 'CREATE', 'PUT': 'UPDATE', 'PATCH': 'UPDATE', 'DELETE': 'DELETE'}
 
+# Tentativa barrada pela permissao. Nao pode entrar na trilha com o verbo HTTP:
+# um GET recusado gravado como READ afirma uma leitura que nunca aconteceu, e a
+# trilha existe justamente para responder quem consultou os dados de alguem.
+ACESSO_NEGADO = 'ACESSO_NEGADO'
+
+RECUSADAS = (401, 403)
+
 
 class TrilhaDeAuditoria:
     def __init__(self, get_response):
@@ -66,7 +73,9 @@ class TrilhaDeAuditoria:
         caminho = request.path
         if not caminho.startswith('/api/') or caminho.startswith(IGNORADAS):
             return False
-        if resposta.status_code in (401, 403):
+        if resposta.status_code in RECUSADAS:
+            # Tentativa barrada e sinal de seguranca, e fica registrada mesmo
+            # em caminho que nao se audita quando da certo.
             return True
         if resposta.status_code >= 400:
             return False
@@ -86,7 +95,8 @@ class TrilhaDeAuditoria:
         RegistroDeAuditoria(
             id=str(uuid.uuid4()),
             operador=operador,
-            acao=ACOES.get(request.method, request.method),
+            acao=(ACESSO_NEGADO if resposta.status_code in RECUSADAS
+                  else ACOES.get(request.method, request.method)),
             entidade=entidade,
             entidade_id=entidade_id,
             dados_depois=redigir(corpo) if corpo else None,
