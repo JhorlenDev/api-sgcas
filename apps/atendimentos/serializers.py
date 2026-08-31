@@ -85,9 +85,11 @@ class RegistroDeRecepcaoSerializer(serializers.Serializer):
     `motivo` é exigido quando se finaliza sem encaminhar: é o que a próxima
     unidade vai ler quando a pessoa aparecer lá.
 
-    A prioridade aqui é a prioridade de entrada na fila. A avaliação técnica
-    pode mudar depois, mas a recepção precisa sinalizar preferencial/urgente
-    para ordenar a chamada inicial.
+    A prioridade aqui é a de entrada na fila, e vai até `ALTA` — a senha
+    preferencial (prefixo PR), que o atendente do balcão precisa poder dar a
+    quem tem direito por lei. `URGENTE` não: dizer que um caso é urgente é
+    avaliação técnica, feita por quem atende, e não pelo balcão. Pedido de
+    urgência vindo da recepção entra como `NORMAL`, e a triagem repriorize.
 
     `unidade_destino_id` permite encaminhar já no balcão: a pessoa é cadastrada
     aqui e entra na fila de lá, com os dados prontos, em vez de fazer a viagem
@@ -108,6 +110,14 @@ class RegistroDeRecepcaoSerializer(serializers.Serializer):
     motivo = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     servico = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     acao_itinerante_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+
+    def validate_prioridade(self, valor):
+        # Rebaixa em vez de recusar: a recepção pediu urgência de boa-fé, e
+        # derrubar o atendimento por isso faria a pessoa esperar de novo. O
+        # caso entra na fila normal e quem atende reprioriza ao ver a situação.
+        if valor == Caso.Prioridade.URGENTE:
+            return Caso.Prioridade.NORMAL
+        return valor
 
     def validate(self, dados):
         finalizou = dados['desfecho'] == AtendimentoDeRecepcao.Desfecho.FINALIZADO

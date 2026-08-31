@@ -36,12 +36,25 @@ class AtendimentoDeBalcao(CenarioBase):
         self.assertIsNotNone(dados['senha'])
         self.assertEqual(Caso.objects.get(cidadao=self.cidadao).situacao, Caso.Situacao.EM_TRIAGEM)
 
-    def test_recepcao_nao_define_prioridade(self):
+    def test_recepcao_nao_marca_urgente(self):
         # Dizer que um caso é urgente é avaliação técnica. A recepção captura o
-        # pedido; quem atende reprioriza ao ver a situação.
-        dados = self.registrar(desfecho='ENCAMINHADO', prioridade='URGENTE').json()
+        # pedido; quem atende reprioriza ao ver a situação. O pedido não é
+        # recusado — a pessoa já está no balcão e não pode voltar pra fila.
+        resposta = self.registrar(desfecho='ENCAMINHADO', prioridade='URGENTE')
+
+        self.assertEqual(resposta.status_code, 201)
+        dados = resposta.json()
         self.assertEqual(dados['caso']['prioridade'], Caso.Prioridade.NORMAL)
         self.assertEqual(dados['senha']['prioridade'], Caso.Prioridade.NORMAL)
+
+    def test_recepcao_marca_preferencial(self):
+        # A preferência legal (idoso, PCD, gestante) é observada no balcão, e é
+        # o atendente quem a registra — daí a senha PR sair da recepção.
+        dados = self.registrar(desfecho='ENCAMINHADO', prioridade='ALTA').json()
+
+        self.assertEqual(dados['caso']['prioridade'], Caso.Prioridade.ALTA)
+        self.assertEqual(dados['senha']['prioridade'], Caso.Prioridade.ALTA)
+        self.assertTrue(dados['senha']['senha'].startswith('PR'))
 
     def test_servico_precisa_existir(self):
         resposta = self.registrar(servico_id='inventado', desfecho='ENCAMINHADO')
