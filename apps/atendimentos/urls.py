@@ -24,4 +24,8 @@ casos_urlpatterns = [
 
 acoes_urlpatterns = [
     path('', api.acoes_itinerantes, name='acoes-itinerantes'),
+    path('resumo', api.resumo_acoes_itinerantes, name='acoes-resumo'),
+    path('<str:acao_id>/concluir', api.concluir_acao_itinerante, name='acao-concluir'),
+    path('<str:acao_id>/balanco', api.balanco_acao_itinerante, name='acao-balanco'),
+    path('<str:acao_id>/excluir', api.excluir_acao_itinerante, name='acao-excluir'),
 ]

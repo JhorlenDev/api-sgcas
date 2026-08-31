@@ -9,12 +9,15 @@ revisão de código.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 
 from django.utils import timezone
 
 from apps.auditoria.models import RegistroDeAuditoria
 from apps.auditoria.redacao import redigir
+
+logger = logging.getLogger(__name__)
 
 # Leituras auditadas: apenas onde o alvo é dado pessoal.
 #
@@ -42,9 +45,11 @@ class TrilhaDeAuditoria:
             if self._deve_registrar(request, resposta):
                 self._registrar(request, resposta, corpo)
         except Exception:
-            # Falha ao auditar não pode derrubar o atendimento. O registro se
-            # perde; a pessoa continua sendo atendida.
-            pass
+            logger.exception(
+                'Falha ao registrar auditoria: %s %s',
+                request.method,
+                request.path,
+            )
 
         return resposta
 
@@ -61,6 +66,8 @@ class TrilhaDeAuditoria:
         caminho = request.path
         if not caminho.startswith('/api/') or caminho.startswith(IGNORADAS):
             return False
+        if resposta.status_code in (401, 403):
+            return True
         if resposta.status_code >= 400:
             return False
         if request.method == 'GET':

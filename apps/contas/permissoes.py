@@ -42,6 +42,7 @@ class EquipeDeAtendimento(TemPapel):
         Papel.COORDENADOR,
         Papel.ASSISTENTE_SOCIAL,
         Papel.TECNICO,
+        Papel.GESTOR_ACOES_ITINERANTES,
     )
 
 

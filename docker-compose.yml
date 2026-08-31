@@ -1,4 +1,4 @@
-o que services:
+services:
   postgres:
     image: postgres:16-alpine
     container_name: api-sgcas-db
@@ -7,8 +7,6 @@ o que services:
       POSTGRES_USER: ${POSTGRES_USER:-sgcas}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
       POSTGRES_DB: ${POSTGRES_DB:-sgcas}
-    ports:
-      - '${POSTGRES_PORT:-5434}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -32,6 +30,12 @@ o que services:
       - '${API_PORT:-8000}:8000'
     volumes:
       - ./armazenamento:/app/armazenamento
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf http://localhost:8000/api/institutional/units/ || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
 volumes:
   pgdata:

@@ -529,3 +529,108 @@ def acoes_itinerantes(request):
     )
     acao.save(force_insert=True)
     return Response(AcaoItineranteSerializer(acao).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH'])
+@permission_classes([EquipeDeAtendimento])
+def concluir_acao_itinerante(request, acao_id):
+    """Conclui uma ação itinerante registrando métricas finais."""
+    try:
+        acao = AcaoItinerante.vigentes.get(id=acao_id)
+    except AcaoItinerante.DoesNotExist:
+        return Response({'detalhe': 'Ação não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not pode_acessar_unidade(request.user, str(acao.unidade_id)):
+        return Response({'detalhe': 'Sem permissão para alterar ação de outra unidade.'},
+                        status=status.HTTP_403_FORBIDDEN)
+
+    cidadaos = request.data.get('cidadaos_atendidos')
+    participantes = request.data.get('participantes', 0)
+    beneficios = request.data.get('beneficios_concedidos', 0)
+    casos = request.data.get('casos_abertos', 0)
+
+    if cidadaos is None:
+        return Response({'detalhe': 'Informe o número de cidadãos atendidos.'},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        cidadaos = int(cidadaos)
+        participantes = int(participantes)
+        beneficios = int(beneficios)
+        casos = int(casos)
+    except (TypeError, ValueError):
+        return Response({'detalhe': 'Valores inválidos.'},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    acao.cidadaos_atendidos = cidadaos
+    acao.participantes = participantes
+    acao.beneficios_concedidos = beneficios
+    acao.casos_abertos = casos
+    acao.concluida = True
+    acao.atualizada_em = timezone.now()
+    acao.save(update_fields=[
+        'cidadaos_atendidos', 'participantes', 'beneficios_concedidos',
+        'casos_abertos', 'concluida', 'atualizada_em',
+    ])
+
+    return Response(AcaoItineranteSerializer(acao).data)
+
+
+@api_view(['GET'])
+@permission_classes([EquipeDeAtendimento])
+def balanco_acao_itinerante(request, acao_id):
+    """Dashboard de uma ação com métricas e vínculos."""
+    try:
+        acao = AcaoItinerante.vigentes.select_related('unidade', 'responsavel').get(id=acao_id)
+    except AcaoItinerante.DoesNotExist:
+        return Response({'detalhe': 'Ação não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not pode_acessar_unidade(request.user, str(acao.unidade_id)):
+        return Response({'detalhe': 'Sem permissão para acessar ação de outra unidade.'},
+                        status=status.HTTP_403_FORBIDDEN)
+
+    dados = AcaoItineranteSerializer(acao).data
+    dados['balanco'] = acao.balanco()
+    return Response(dados)
+
+
+@api_view(['GET'])
+@permission_classes([EquipeDeAtendimento])
+def resumo_acoes_itinerantes(request):
+    """Totais acumulados de todas as ações para o card de balanço."""
+    escopo = resolver_filtro(request.user, request.query_params.get('unidade'))
+    acoes = AcaoItinerante.vigentes.filter(**escopo)
+    totais = acoes.aggregate(
+        total_cidadaos=models.Sum('cidadaos_atendidos', default=0),
+        total_casos=models.Sum('casos_abertos', default=0),
+        total_beneficios=models.Sum('beneficios_concedidos', default=0),
+    )
+    total_acoes = acoes.count()
+    total_concluidas = acoes.filter(concluida=True).count()
+
+    return Response({
+        'total_cidadaos': totais['total_cidadaos'],
+        'total_casos': totais['total_casos'],
+        'total_beneficios': totais['total_beneficios'],
+        'total_acoes': total_acoes,
+        'total_concluidas': total_concluidas,
+    })
+
+
+@api_view(['DELETE'])
+@permission_classes([EquipeDeAtendimento])
+def excluir_acao_itinerante(request, acao_id):
+    """Exclui (soft delete) uma ação itinerante."""
+    try:
+        acao = AcaoItinerante.vigentes.get(id=acao_id)
+    except AcaoItinerante.DoesNotExist:
+        return Response({'detalhe': 'Ação não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not pode_acessar_unidade(request.user, str(acao.unidade_id)):
+        return Response({'detalhe': 'Sem permissão para excluir ação de outra unidade.'},
+                        status=status.HTTP_403_FORBIDDEN)
+
+    acao.excluida_em = timezone.now()
+    acao.save(update_fields=['excluida_em'])
+
+    return Response(status=status.HTTP_204_NO_CONTENT)

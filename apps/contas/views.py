@@ -6,7 +6,6 @@ import logging
 
 from django.conf import settings
 from django.http import HttpResponseRedirect, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.contas import keycloak
@@ -84,7 +83,6 @@ def callback(request):
 
 
 @require_POST
-@csrf_exempt
 def reenviar_solicitacao(request):
     """Reenvia/reafirma o pedido criado quando a pessoa entrou sem papel."""
     claims = request.session.get(CHAVE_PEDIDO_ACESSO) or {}
@@ -110,7 +108,6 @@ def reenviar_solicitacao(request):
 
 
 @require_POST
-@csrf_exempt
 def logout(request):
     """
     Encerra a sessão local e devolve a URL que encerra a do Tefé Cidadão.
