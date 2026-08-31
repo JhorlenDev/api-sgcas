@@ -95,6 +95,66 @@ docker compose up -d --build
 
 Se rodar a API dentro do Docker, o serviço `api` usa o PostgreSQL interno do compose.
 
+## Pôr em produção
+
+O container sobe direto no gunicorn e **não roda migrations sozinho**. A ordem é:
+
+```bash
+docker compose build api
+docker compose run --rm api python manage.py migrate
+docker compose run --rm api python manage.py cadastrar_servicos   # só na primeira vez
+docker compose up -d
+```
+
+Pular o `migrate` deixa a API no ar contra um esquema desatualizado, e os
+endpoints que usam as colunas novas falham em tempo de requisição.
+
+### Variáveis que precisam de valor real
+
+`.env.example` traz só marcadores. Antes de expor a API:
+
+| Variável | Observação |
+| --- | --- |
+| `DEBUG` | `False` |
+| `ALLOWED_HOSTS` | domínio real da API |
+| `DJANGO_SECRET_KEY` | a API se recusa a subir com a chave padrão e `DEBUG=False` |
+| `POSTGRES_PASSWORD` | senha do banco |
+| `CORS_ORIGIN` / `FRONTEND_URL` | domínio do front |
+| `KEYCLOAK_CLIENT_SECRET` | segredo do cliente no SSO |
+
+### Cifragem dos dados pessoais
+
+Desligada por padrão. Para ligar, gere **duas** chaves distintas:
+
+```bash
+python -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode())"
+```
+
+Preencha `PII_ENCRYPTION_KEY` e `PII_HMAC_KEY`, ponha `PII_ENCRYPTION_ENABLED=true`
+e rode o backfill:
+
+```bash
+docker compose run --rm api python manage.py cifrar_dados_pessoais --simular
+docker compose run --rm api python manage.py cifrar_dados_pessoais
+```
+
+O backfill não é opcional numa base que já tem cadastros: com a cifragem ligada
+a busca por documento passa a usar índice cego, e quem foi gravado antes não tem
+índice — sumiria da consulta por CPF, NIS e e-mail sem erro nenhum na tela.
+
+**Guarde as chaves fora do servidor.** Sem elas não há como decifrar o que já
+foi gravado.
+
+### Integração com o Tefé Cidadão
+
+O pré-cadastro cria a conta da pessoa no SSO durante o atendimento. Vem
+desligado; para ativar, preencha `PRECADASTRO_CLIENT_ID` e
+`PRECADASTRO_CLIENT_SECRET` (conta de serviço no realm) e ponha
+`PRECADASTRO_ENABLED=true`.
+
+Falha no SSO nunca derruba o cadastro: a pessoa já foi atendida, o registro
+dela existe, e o resultado volta na resposta para o atendente saber o que dizer.
+
 ## Login e permissões
 
 O SGCAS não usa senha própria. O login começa aqui:
@@ -256,5 +316,6 @@ set -a; . ./.env; set +a
 
 - Não commite `.env`.
 - Use `.env.example` como base.
-- Dados sensíveis de cidadão podem ser cifrados ativando `PII_ENCRYPTION_ENABLED`.
+- Dados sensíveis de cidadão podem ser cifrados ativando `PII_ENCRYPTION_ENABLED` —
+  numa base já povoada, rode `manage.py cifrar_dados_pessoais` logo em seguida.
 - Antes de produção, revise migrations e variáveis do Keycloak.
