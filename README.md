@@ -284,6 +284,10 @@ POST /api/reception/atendimento
 
 GET  /api/queues/
 GET  /api/queues/painel
+GET  /api/queues/painel/:grupo
+GET  /api/queues/atendimento-atual
+GET  /api/queues/em-atendimento
+GET  /api/queues/:senha_id/retomar
 POST /api/queues/chamar-proximo
 POST /api/queues/:senha_id/nao-compareceu
 
