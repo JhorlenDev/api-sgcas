@@ -10,7 +10,8 @@ class GestaoDeOperadores(CenarioBase):
 
     def test_quem_nao_ve_todas_as_unidades_ve_so_a_sua(self):
         # Mais quem está sem lotação — é a partir daí que a unidade é atribuída.
-        emails = {o['email'] for o in self.como(self.coordenador).get('/api/users/').json()}
+        resposta = self.como(self.coordenador).get('/api/users/').json()
+        emails = {o['email'] for o in resposta['itens']}
         self.assertIn(self.recepcionista.email, emails)      # mesma unidade
         self.assertIn(self.sem_unidade.email, emails)        # sem lotação
         self.assertNotIn(self.tecnico.email, emails)         # outra unidade
