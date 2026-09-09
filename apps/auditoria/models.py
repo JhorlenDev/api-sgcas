@@ -30,6 +30,13 @@ class RegistroDeAuditoria(models.Model):
         verbose_name = 'registro de auditoria'
         verbose_name_plural = 'registros de auditoria'
         ordering = ['-criado_em']
+        # "Quem consultou os dados desta pessoa" e a pergunta que a trilha
+        # existe para responder: ela filtra por entidade + alvo e ordena por
+        # data. Sem indice, responde varrendo tudo.
+        indexes = [
+            models.Index(fields=['-criado_em'], name='auditoria_criado_em_idx'),
+            models.Index(fields=['entidade', 'entidade_id'], name='auditoria_entidade_idx'),
+        ]
 
     def __str__(self) -> str:
         return f'{self.acao} {self.entidade} por {self.operador_id}'

@@ -90,6 +90,14 @@ class Caso(models.Model):
         verbose_name = 'caso'
         verbose_name_plural = 'casos'
         ordering = ['-aberto_em']
+        # A listagem ordena por `-aberto_em` e filtra por unidade e situacao.
+        # Sem indice, cada abertura da tela varre a tabela inteira e ordena o
+        # resultado — custo que cresce junto com o historico do municipio.
+        indexes = [
+            models.Index(fields=['-aberto_em'], name='caso_aberto_em_idx'),
+            models.Index(fields=['unidade', 'situacao'], name='caso_unidade_situacao_idx'),
+            models.Index(fields=['-atualizado_em'], name='caso_atualizado_em_idx'),
+        ]
 
     def __str__(self) -> str:
         return f'{self.protocolo} — {self.situacao}'
@@ -129,6 +137,12 @@ class SenhaDaFila(models.Model):
         verbose_name = 'senha da fila'
         verbose_name_plural = 'senhas da fila'
         ordering = ['criado_em']
+        # O painel conta senha por unidade e situacao a cada carregamento, e a
+        # numeracao do dia consulta por unidade + data.
+        indexes = [
+            models.Index(fields=['unidade', 'situacao'], name='senha_unidade_situacao_idx'),
+            models.Index(fields=['-criado_em'], name='senha_criado_em_idx'),
+        ]
 
     def __str__(self) -> str:
         return f'{self.senha} — {self.situacao}'
@@ -191,6 +205,9 @@ class BeneficioEventual(models.Model):
         verbose_name = 'benefício eventual'
         verbose_name_plural = 'benefícios eventuais'
         ordering = ['-criado_em']
+        indexes = [
+            models.Index(fields=['-criado_em'], name='beneficio_criado_em_idx'),
+        ]
 
     def __str__(self) -> str:
         return f'{self.get_tipo_display() if self.tipo in dict(self.Tipo.choices) else self.tipo}'

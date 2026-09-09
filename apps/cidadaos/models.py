@@ -143,6 +143,12 @@ class Cidadao(models.Model):
         verbose_name = 'cidadão'
         verbose_name_plural = 'cidadãos'
         ordering = ['nome']
+        # A lista de recentes ordena por `-atualizado_em`. A busca por nome usa
+        # indice de trigrama, criado a parte na migration (btree nao atende
+        # `ILIKE '%termo%'`).
+        indexes = [
+            models.Index(fields=['-atualizado_em'], name='cidadao_atualizado_em_idx'),
+        ]
 
     def __str__(self) -> str:
         return self.nome
