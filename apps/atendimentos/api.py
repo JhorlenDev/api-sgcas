@@ -31,6 +31,7 @@ from apps.atendimentos.serializers import (
     SenhaSerializer,
 )
 from apps.cidadaos.models import Cidadao
+from apps.comum.consultas import filtrar_iguais, filtrar_periodo, ordenar, paginar
 from apps.institucional.models import Servico, Unidade
 from apps.cidadaos.serializers import CidadaoSerializer, EntradaDoHistoricoSerializer
 from apps.contas.escopo import pode_acessar_unidade, resolver_filtro
@@ -165,12 +166,27 @@ def registrar_recepcao(request):
 @api_view(['GET'])
 @permission_classes([Recepcao])
 def atendimentos_da_recepcao(request):
-    """Últimos registros feitos pela recepção logada."""
-    consulta = (
-        AtendimentoDeRecepcao.objects.filter(atendido_por=request.user)
-        .select_related('cidadao', 'unidade', 'atendido_por', 'caso', 'caso__unidade')[:20]
-    )
-    return Response(AtendimentoDeRecepcaoSerializer(consulta, many=True).data)
+    """
+    Registros feitos pela recepção logada.
+
+    `todos=1` amplia para a unidade inteira — é o que um coordenador precisa
+    para conferir o balcão sem ter de entrar na conta de cada recepcionista.
+    O escopo por unidade continua valendo: nunca devolve balcão alheio.
+    """
+    if (request.query_params.get('todos') or '').strip() in ('1', 'true', 'sim'):
+        escopo = resolver_filtro(request.user, request.query_params.get('unidade'))
+        consulta = AtendimentoDeRecepcao.objects.filter(**escopo)
+    else:
+        consulta = AtendimentoDeRecepcao.objects.filter(atendido_por=request.user)
+
+    consulta = consulta.select_related(
+        'cidadao', 'unidade', 'atendido_por', 'caso', 'caso__unidade')
+    consulta = filtrar_iguais(consulta, request, {
+        'desfecho': 'desfecho',
+        'cidadao': 'cidadao_id',
+    })
+    consulta = filtrar_periodo(consulta, request, 'criado_em')
+    return Response(paginar(consulta, request, AtendimentoDeRecepcaoSerializer, padrao=20))
 
 
 @api_view(['GET'])
@@ -210,15 +226,25 @@ def painel_da_recepcao(request):
 @api_view(['GET'])
 @permission_classes([Recepcao])
 def fila(request):
-    """Quem está aguardando na unidade. Estritamente operacional, por unidade."""
+    """
+    Quem está aguardando na unidade. Estritamente operacional, por unidade.
+
+    Paginada como as demais: era a única listagem sem teto, e a fila é
+    justamente a tela em que um acúmulo inesperado — senha que ficou viva por
+    um atendimento interrompido, dia que não fechou — aparece de uma vez.
+    A página padrão é maior que a das outras porque a fila do dia cabe nela.
+    """
     escopo = resolver_filtro(request.user, request.query_params.get('unidade'))
+    situacao = (request.query_params.get('situacao') or SenhaDaFila.Situacao.AGUARDANDO).strip()
+
     aguardando = (
-        SenhaDaFila.objects.filter(situacao=SenhaDaFila.Situacao.AGUARDANDO, **escopo)
+        SenhaDaFila.objects.filter(situacao=situacao, **escopo)
         .select_related('cidadao')
         .annotate(ordem_prioridade=_ordem_de_prioridade())
         .order_by('ordem_prioridade', 'criado_em')
     )
-    return Response(SenhaSerializer(aguardando, many=True).data)
+    aguardando = filtrar_iguais(aguardando, request, {'prioridade': 'prioridade'})
+    return Response(paginar(aguardando, request, SenhaSerializer, padrao=50))
 
 
 @api_view(['GET'])
@@ -372,21 +398,82 @@ def nao_compareceu(request, senha_id: str):
     })
 
 
+ORDENACOES_DE_CASO = {
+    '-aberto_em': ('-aberto_em',),
+    'aberto_em': ('aberto_em',),
+    '-atualizado_em': ('-atualizado_em',),
+    'prioridade': ('prioridade_ordem', '-aberto_em'),
+}
+
+
+def _consulta_de_casos(request):
+    """
+    Base compartilhada entre a listagem e o resumo.
+
+    As duas precisam do mesmo escopo e dos mesmos filtros: se divergirem, o
+    contador do topo da tela deixa de descrever a lista que esta embaixo dele.
+    """
+    escopo = resolver_filtro(request.user, request.query_params.get('unidade'))
+    consulta = (
+        Caso.vigentes.filter(**escopo)
+        # `servico` entra aqui porque o serializer le `servico.nome`: sem ele,
+        # cada linha renderizada custava uma consulta a mais (101 para 100 casos).
+        .select_related('cidadao', 'unidade', 'tecnico', 'servico')
+    )
+
+    consulta = filtrar_iguais(consulta, request, {
+        'situacao': 'situacao',
+        'prioridade': 'prioridade',
+        'cidadao': 'cidadao_id',
+        'tecnico': 'tecnico_id',
+        'servico': 'servico_id',
+        'demanda': 'demanda_id',
+    })
+    consulta = filtrar_periodo(consulta, request, 'aberto_em')
+
+    busca = (request.query_params.get('busca') or '').strip()
+    if busca:
+        consulta = consulta.filter(
+            models.Q(protocolo__icontains=busca) | models.Q(cidadao__nome__icontains=busca)
+        )
+    return consulta
+
+
 @api_view(['GET'])
 @permission_classes([PodeConsultar])
 def casos(request):
-    escopo = resolver_filtro(request.user, request.query_params.get('unidade'))
-    consulta = Caso.vigentes.filter(**escopo).select_related('cidadao', 'unidade', 'tecnico')
+    consulta = _consulta_de_casos(request).annotate(prioridade_ordem=_ordem_de_prioridade())
+    consulta = ordenar(consulta, request, ORDENACOES_DE_CASO, '-aberto_em')
+    return Response(paginar(consulta, request, CasoSerializer))
 
-    situacao = request.query_params.get('situacao')
-    if situacao:
-        consulta = consulta.filter(situacao=situacao)
 
-    cidadao = request.query_params.get('cidadao')
-    if cidadao:
-        consulta = consulta.filter(cidadao_id=cidadao)
+@api_view(['GET'])
+@permission_classes([PodeConsultar])
+def resumo_de_casos(request):
+    """
+    Contagem por situação, no mesmo recorte da listagem.
 
-    return Response(CasoSerializer(consulta[:100], many=True).data)
+    Existe porque contar no cliente sobre a página recebida responde outra
+    pergunta: quantos casos há *nesta página*, e não na rede. Com 220 mil casos
+    e página de 25, a diferença entre as duas respostas é de três ordens de
+    grandeza — e é o número que alguém usa para decidir escala de equipe.
+    """
+    consulta = _consulta_de_casos(request)
+    contagem = {
+        linha['situacao']: linha['quantos']
+        for linha in consulta.values('situacao').annotate(quantos=models.Count('id'))
+    }
+    por_situacao = {situacao: contagem.get(situacao, 0) for situacao, _ in Caso.Situacao.choices}
+    return Response({
+        'total': sum(por_situacao.values()),
+        'por_situacao': por_situacao,
+        'em_acompanhamento': (
+            por_situacao[Caso.Situacao.EM_TRIAGEM] + por_situacao[Caso.Situacao.EM_ATENDIMENTO]
+        ),
+        'finalizados': (
+            por_situacao[Caso.Situacao.CONCLUIDO] + por_situacao[Caso.Situacao.ENCAMINHADO]
+        ),
+    })
 
 
 @api_view(['POST'])

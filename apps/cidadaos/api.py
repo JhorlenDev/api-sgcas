@@ -30,9 +30,17 @@ from django.utils import timezone
 
 from apps.cidadaos import anexos as arquivos
 from apps.cidadaos import pre_cadastro
+from apps.comum.consultas import LIMITE_MAXIMO, filtrar_iguais, ordenar, paginar
 from apps.contas.permissoes import EquipeDeAtendimento, PodeConsultar, Recepcao, Supervisao
 
 LIMITE_DA_BUSCA = 50
+
+ORDENACOES_DE_CIDADAO = {
+    '-atualizado_em': ('-atualizado_em',),
+    'nome': ('nome',),
+    '-nome': ('-nome',),
+    '-criado_em': ('-criado_em',),
+}
 
 
 def _registrar_auditoria(request, acao, entidade, entidade_id, dados_novos=None, dados_antes=None):
@@ -75,17 +83,48 @@ def buscar(request):
     decifrar nada. Por nome, é comparação direta na coluna em texto.
     """
     termo = (request.query_params.get('busca') or '').strip()
+
     if not termo:
-        recentes = Cidadao.vigentes.order_by('-atualizado_em')[:LIMITE_DA_BUSCA]
-        return Response(CidadaoNaListaSerializer(recentes, many=True).data)
-
-    por_documento = Cidadao.vigentes.por_documento(termo)
-    if por_documento.exists():
-        encontrados = por_documento[:LIMITE_DA_BUSCA]
+        encontrados = Cidadao.vigentes.all()
     else:
-        encontrados = Cidadao.vigentes.filter(nome__icontains=termo)[:LIMITE_DA_BUSCA]
+        # O ramo do documento é resolvido de uma vez e vira um `id__in`.
+        #
+        # Antes eram três avaliações da mesma consulta — `exists()`, o `count()`
+        # da paginação e a fatia. Com a cifragem desligada a comparação cai nas
+        # colunas em texto, que não têm índice, e cada avaliação custava uma
+        # varredura inteira do cadastro. Materializar uma vez troca três
+        # varreduras por uma, e o que sobra é busca por chave primária.
+        # "Maria" não é documento, e tentar assim mesmo custa uma varredura
+        # inteira comparando texto contra colunas de CPF, NIS e e-mail antes de
+        # desistir — em toda busca por nome, que é a mais comum do balcão.
+        # CPF e NIS são numéricos e e-mail tem arroba: sem nenhum dos dois
+        # sinais, o ramo do documento não pode casar.
+        parece_documento = any(c.isdigit() for c in termo) or '@' in termo
 
-    return Response(CidadaoNaListaSerializer(encontrados, many=True).data)
+        ids = list(
+            Cidadao.vigentes.por_documento(termo).values_list('id', flat=True)[:LIMITE_MAXIMO]
+        ) if parece_documento else []
+
+        encontrados = (
+            Cidadao.vigentes.filter(id__in=ids) if ids
+            else Cidadao.vigentes.filter(nome__icontains=termo)
+        )
+
+    encontrados = filtrar_iguais(encontrados, request, {
+        'bairro': 'bairro',
+        'sexo': 'sexo',
+        'situacao': 'situacao_beneficiario',
+    })
+    encontrados = ordenar(encontrados, request, ORDENACOES_DE_CIDADAO, '-atualizado_em')
+
+    # A listagem mostra seis campos; o modelo tem sete colunas JSON com o
+    # prontuário inteiro (composição familiar, socioeconômico, anexos). Sem o
+    # `only`, cada linha da lista traz ~1 KB de dado que ninguém exibe — e cada
+    # campo cifrado ainda passa pela decifragem ao ser lido.
+    encontrados = encontrados.only('id', 'nome', 'cpf', 'nascimento', 'bairro', 'cidade')
+
+    return Response(paginar(encontrados, request, CidadaoNaListaSerializer,
+                            padrao=LIMITE_DA_BUSCA))
 
 
 @api_view(['GET'])

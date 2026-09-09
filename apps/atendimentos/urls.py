@@ -17,6 +17,9 @@ fila_urlpatterns = [
 
 casos_urlpatterns = [
     path('', api.casos, name='casos'),
+    # Antes das rotas com `<caso_id>`: "resumo" e um caminho fixo e nao pode ser
+    # capturado como identificador de caso.
+    path('resumo', api.resumo_de_casos, name='casos-resumo'),
     path('<str:caso_id>/observacao', api.anotar_caso, name='caso-observacao'),
     path('<str:caso_id>/encaminhar', api.encaminhar, name='caso-encaminhar'),
     path('<str:caso_id>/concluir', api.concluir, name='caso-concluir'),

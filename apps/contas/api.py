@@ -11,6 +11,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.comum.consultas import filtrar_iguais, paginar
 from apps.contas import keycloak
 from apps.contas.models import Operador, PedidoDeAcesso
 from apps.contas.papeis import PRECEDENCIA
@@ -143,7 +144,23 @@ def listar_operadores(request):
     if request.query_params.get('sem_unidade') == 'true':
         consulta = consulta.filter(unidade__isnull=True)
 
-    return Response(OperadorNaListaSerializer(consulta, many=True).data)
+    consulta = filtrar_iguais(consulta, request, {
+        'papel': 'papel',
+        'unidade': 'unidade_id',
+    })
+
+    ativo = (request.query_params.get('ativo') or '').strip()
+    if ativo in ('true', 'false'):
+        consulta = consulta.filter(ativo=ativo == 'true')
+
+    busca = (request.query_params.get('busca') or '').strip()
+    if busca:
+        consulta = consulta.filter(
+            models.Q(nome__icontains=busca) | models.Q(email__icontains=busca)
+        )
+
+    return Response(paginar(consulta.order_by('nome'), request,
+                            OperadorNaListaSerializer, padrao=50))
 
 
 @api_view(['GET'])
