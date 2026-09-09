@@ -4,6 +4,11 @@ Backend Django/DRF do SGCAS — Sistema de Gestão de Casos da Assistência Soci
 
 Este projeto expõe a API consumida pelo `front-sgcas`, integra login via Keycloak/Tefé Cidadão e organiza o fluxo de recepção, fila, atendimento e acompanhamentos.
 
+> **Na branch `ajustes-marreira`:** o que foi corrigido e por quê está em
+> [`AJUSTES.md`](AJUSTES.md) — inclusive o que ficou de fora e o que exige
+> atenção antes de ir para produção.
+
+
 ## Stack
 
 - Python 3.12
