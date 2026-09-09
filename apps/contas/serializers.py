@@ -35,11 +35,27 @@ class DecisaoDeAcessoSerializer(serializers.Serializer):
 
 
 class OperadorNaListaSerializer(serializers.ModelSerializer):
+    """
+    Mesmo formato de `unidade` que o `OperadorSerializer` — um objeto.
+
+    Antes esta lista devolvia `unidade` como string (o id) enquanto
+    `/api/auth/me` devolvia objeto. O consumidor que lesse `unidade.id` recebia
+    `undefined` sem erro nenhum, e o formulario de usuarios acabava enviando
+    lotacao vazia — apagando a unidade de quem fosse salvo. Um nome, um
+    significado.
+
+    `unidade_nome` continua exposto porque a tela o usa para exibir sem precisar
+    descer no objeto.
+    """
+
+    unidade = UnidadeResumidaSerializer(read_only=True)
+    unidade_id = serializers.CharField(read_only=True, default=None)
     unidade_nome = serializers.CharField(source='unidade.nome', read_only=True, default=None)
 
     class Meta:
         model = Operador
-        fields = ['id', 'nome', 'email', 'papel', 'ativo', 'unidade', 'unidade_nome']
+        fields = ['id', 'nome', 'email', 'papel', 'ativo',
+                  'unidade', 'unidade_id', 'unidade_nome']
 
 
 class AtualizarOperadorSerializer(serializers.Serializer):
