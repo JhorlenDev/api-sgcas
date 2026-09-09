@@ -257,6 +257,79 @@ A aba de acompanhamentos mostra os casos por situação:
 
 O modal do caso mostra dados conforme a etapa atual.
 
+## Listagens: paginação e filtros
+
+Toda listagem grande é paginada e devolve um envelope, não uma lista solta:
+
+```json
+{ "itens": [...], "total": 220065, "pagina": 1, "por_pagina": 25, "paginas": 8803 }
+```
+
+`total` é o número de registros que casam com o filtro — contado no banco, não o
+tamanho da página. É a distinção que importa: antes as listagens eram cortadas
+em 100 e quem consumia não tinha como saber que havia mais, nem como pedir o
+resto. Numa base municipal isso virava número errado na tela.
+
+### Parâmetros comuns
+
+| Parâmetro | O que faz |
+| --- | --- |
+| `page` | Página, começando em 1. |
+| `limit` | Itens por página. Teto de **100** — paginação sem teto é o corte antigo com outro nome. |
+| `de` / `ate` | Recorte por data (`AAAA-MM-DD`), as duas pontas inclusivas, no fuso do projeto. |
+| `ordenar` | Só os valores que a rota declara. Valor não suportado devolve **400** com a lista do que é aceito. |
+
+Parâmetro malformado é **recusado com 400**, não ignorado: cair para o padrão em
+silêncio faria a tela mostrar a página 1 achando que mostra outra.
+
+### Filtros por rota
+
+| Rota | Filtros | Ordenações |
+| --- | --- | --- |
+| `GET /api/cases/` | `situacao`, `prioridade`, `unidade`, `tecnico`, `servico`, `demanda`, `cidadao`, `busca` (protocolo ou nome), `de`, `ate` | `-aberto_em` (padrão), `aberto_em`, `-atualizado_em`, `prioridade` |
+| `GET /api/cases/resumo` | os mesmos da listagem | — |
+| `GET /api/citizens/` | `busca` (nome, CPF, NIS ou e-mail), `bairro`, `sexo`, `situacao` | `-atualizado_em` (padrão), `nome`, `-nome`, `-criado_em` |
+| `GET /api/queues/` | `unidade`, `prioridade`, `situacao` (padrão `AGUARDANDO`) | por prioridade e chegada |
+| `GET /api/users/` | `busca` (nome ou e-mail), `papel`, `unidade`, `ativo`, `sem_unidade` | por nome |
+| `GET /api/reception/atendimentos` | `desfecho`, `cidadao`, `de`, `ate`, `todos=1` (unidade inteira) | mais recentes |
+| `GET /api/auditoria/` | `entidade`, `registro`, `acao`, `operador`, `de`, `ate` | `-criado_em` (padrão), `criado_em` |
+
+### `GET /api/cases/resumo`
+
+Contagem por situação, no mesmo recorte da listagem:
+
+```json
+{
+  "total": 220065,
+  "por_situacao": {"EM_TRIAGEM": 6682, "EM_ATENDIMENTO": 4420, "CONCLUIDO": 153970, ...},
+  "em_acompanhamento": 11102,
+  "finalizados": 186958
+}
+```
+
+Existe porque contar no cliente sobre a página recebida responde outra pergunta:
+quantos casos há *naquela página*, e não na rede.
+
+## Índices
+
+As consultas de listagem dependem de índice em coluna de data e de status. Eles
+vêm nas migrations `atendimentos.0007`, `auditoria.0002` e `cidadaos.0003`.
+
+A busca por nome (`ILIKE '%termo%'`) não é atendida por B-tree e usa índice de
+trigrama (`cidadaos.0004`), que exige a extensão **`pg_trgm`**:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+```
+
+A migration cria a extensão sozinha, mas `CREATE EXTENSION` pede privilégio
+elevado. Em Postgres gerenciado, libere `pg_trgm` no painel antes de migrar — se
+a migration falhar por permissão, é isso, e não erro de esquema.
+
+Numa base já grande, `CREATE INDEX` bloqueia escrita enquanto constrói. A
+migration do trigrama usa `CONCURRENTLY`; as demais não — rode em janela de
+manutenção, ou converta-as antes de aplicar em produção.
+
 ## Endpoints principais
 
 ```txt
@@ -268,35 +341,53 @@ POST /api/auth/access-request/resend
 GET  /api/access-requests/
 POST /api/access-requests/:id/aprovar
 
-GET    /api/users/
+GET    /api/users/                     paginado + filtros
 PUT    /api/users/:id
 PUT    /api/users/:id/perfil
 DELETE /api/users/:id
 
-GET  /api/citizens/
+GET  /api/citizens/                    paginado + filtros
 POST /api/citizens/novo
 GET  /api/citizens/:id
 GET  /api/citizens/:id/historico
 
 GET  /api/reception/painel
-GET  /api/reception/atendimentos
+GET  /api/reception/atendimentos       paginado + filtros
 POST /api/reception/atendimento
 
-GET  /api/queues/
+GET  /api/queues/                      paginado + filtros
 GET  /api/queues/painel
 POST /api/queues/chamar-proximo
 POST /api/queues/:senha_id/nao-compareceu
 
-GET  /api/cases/
+GET  /api/cases/                       paginado + filtros
+GET  /api/cases/resumo                 contagem por situação
 POST /api/cases/:id/observacao
 POST /api/cases/:id/encaminhar
 POST /api/cases/:id/concluir
+
+GET  /api/auditoria/                   paginado + filtros
 
 GET  /api/institutional/units
 GET  /api/institutional/services
 GET  /api/institutional/demands
 GET  /api/institutional/coordinations
 ```
+
+## Popular a base para desenvolvimento
+
+```bash
+# rede, cidadãos, casos, fila e auditoria — legível, 45 pessoas
+docker compose run --rm api python manage.py semear_demo
+
+# porte municipal: 100 mil cidadãos, 1,43 milhão de linhas (~9 min)
+docker compose run --rm api python manage.py semear_carga
+docker compose exec postgres psql -U sgcas -d sgcas -c "VACUUM ANALYZE;"
+```
+
+Os dois são idempotentes e nunca apagam nada. Com `DEBUG=True` existe também
+`GET /api/auth/dev-login` (`?papel=RECEPCIONISTA`, `TECNICO`, …), que abre sessão
+local sem passar pelo Tefé Cidadão — a rota não é registrada fora de `DEBUG`.
 
 ## Testes
 
