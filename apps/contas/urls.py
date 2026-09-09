@@ -1,6 +1,7 @@
+from django.conf import settings
 from django.urls import path
 
-from apps.contas import api, views
+from apps.contas import api, dev_login, views
 
 urlpatterns = [
     path('keycloak/login', views.login, name='login'),
@@ -9,6 +10,11 @@ urlpatterns = [
     path('logout', views.logout, name='logout'),
     path('me', api.eu, name='eu'),
 ]
+
+# Entrada local sem SSO. So no ambiente de desenvolvimento: em producao a
+# rota nem chega a existir. Ver apps/contas/dev_login.py.
+if settings.DEBUG:
+    urlpatterns.append(path('dev-login', dev_login.entrar_local, name='dev-login'))
 
 pedidos_urlpatterns = [
     path('', api.pedidos_pendentes, name='pedidos-pendentes'),
