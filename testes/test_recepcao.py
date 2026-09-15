@@ -223,18 +223,40 @@ class RecuperarAtendimento(CenarioBase):
         for grupo in ('atendidos_hoje', 'aguardando_na_fila', 'em_atendimento', 'finalizados_hoje', 'casos_em_acompanhamento'):
             resposta = cliente.get(f'/api/queues/painel/{grupo}')
             self.assertEqual(resposta.status_code, 200)
-            self.assertEqual(len(resposta.json()['registros']), painel[grupo])
-            self.assertEqual(self.como(self.tecnico).get(f'/api/queues/painel/{grupo}').json()['registros'], [])
+            # `total` do envelope, não o tamanho da página: é ele que tem de
+            # bater com o número do painel.
+            self.assertEqual(resposta.json()['total'], painel[grupo])
+            self.assertEqual(self.como(self.tecnico).get(f'/api/queues/painel/{grupo}').json()['itens'], [])
         resposta = cliente.get('/api/queues/painel/casos_em_acompanhamento').json()
         self.assertEqual(resposta['tipo'], 'casos')
-        self.assertEqual(resposta['registros'][0]['id'], chamado['caso']['id'])
+        self.assertEqual(resposta['itens'][0]['id'], chamado['caso']['id'])
         self.assertEqual(cliente.get('/api/queues/painel/invalido').status_code, 404)
+
+    def test_detalhes_sao_paginados(self):
+        chamado = self.abrir()
+        # Mais duas senhas aguardando, copiadas da chamada, para haver o que
+        # dividir em páginas.
+        import uuid
+        for numero in ('N901', 'N902'):
+            copia = SenhaDaFila.objects.get(pk=chamado['senha']['id'])
+            copia.pk = str(uuid.uuid4())
+            copia.senha = numero
+            copia.situacao = SenhaDaFila.Situacao.AGUARDANDO
+            copia.atendido_por = None
+            copia.chamado_em = None
+            copia.save(force_insert=True)
+        resposta = self.como(self.coordenador).get('/api/queues/painel/aguardando_na_fila?limit=1&page=2').json()
+        self.assertEqual(resposta['tipo'], 'senhas')
+        self.assertEqual(resposta['total'], 2)
+        self.assertEqual(resposta['paginas'], 2)
+        self.assertEqual(resposta['pagina'], 2)
+        self.assertEqual(len(resposta['itens']), 1)
 
     def test_detalhes_finalizados_hoje(self):
         chamado = self.abrir()
         cliente = self.como(self.coordenador)
         resposta = cliente.post(f"/api/cases/{chamado['caso']['id']}/concluir", {'situacao': 'CONCLUIDO', 'relato': 'Teste concluído'}, content_type='application/json')
         self.assertEqual(resposta.status_code, 200)
-        self.assertEqual(cliente.get('/api/queues/painel/atendidos_hoje').json()['registros'][0]['id'], chamado['senha']['id'])
-        self.assertEqual(cliente.get('/api/queues/painel/finalizados_hoje').json()['registros'][0]['id'], chamado['caso']['id'])
-        self.assertEqual(cliente.get('/api/queues/painel/casos_em_acompanhamento').json()['registros'], [])
+        self.assertEqual(cliente.get('/api/queues/painel/atendidos_hoje').json()['itens'][0]['id'], chamado['senha']['id'])
+        self.assertEqual(cliente.get('/api/queues/painel/finalizados_hoje').json()['itens'][0]['id'], chamado['caso']['id'])
+        self.assertEqual(cliente.get('/api/queues/painel/casos_em_acompanhamento').json()['itens'], [])

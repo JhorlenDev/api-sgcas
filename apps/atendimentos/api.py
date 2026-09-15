@@ -277,14 +277,23 @@ def painel_da_fila(request):
 @api_view(['GET'])
 @permission_classes([EquipeDeAtendimento])
 def detalhes_do_painel(request, grupo):
+    """
+    Registros por trás de um número do painel do atendente.
+
+    Paginado como as demais listagens: "casos em acompanhamento" é a unidade
+    inteira, e no CRAS Centro da base de carga eram 3.121 casos — 2,2 MB de
+    JSON numa resposta só, para uma lista que a pessoa lê de 25 em 25.
+    `tipo` diz se os itens são senhas ou casos, porque o front desenha cada um
+    de um jeito.
+    """
     registros = _grupos_do_painel(request.user).get(grupo)
     if registros is None:
         return Response({'detalhe': 'Indicador não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
     if grupo in ('finalizados_hoje', 'casos_em_acompanhamento'):
         registros = registros.select_related('cidadao', 'unidade', 'tecnico', 'servico').order_by('-atualizado_em', 'id')
-        return Response({'tipo': 'casos', 'registros': CasoSerializer(registros, many=True).data})
+        return Response({'tipo': 'casos', **paginar(registros, request, CasoSerializer)})
     registros = registros.select_related('cidadao').annotate(ordem_prioridade=_ordem_de_prioridade()).order_by('ordem_prioridade', 'criado_em', 'id')
-    return Response({'tipo': 'senhas', 'registros': SenhaSerializer(registros, many=True).data})
+    return Response({'tipo': 'senhas', **paginar(registros, request, SenhaSerializer)})
 
 
 def _senha_atual(operador):

@@ -362,7 +362,7 @@ POST /api/reception/atendimento
 
 GET  /api/queues/                      paginado + filtros
 GET  /api/queues/painel
-GET  /api/queues/painel/:grupo
+GET  /api/queues/painel/:grupo              paginado ({ tipo, itens, total, ... })
 GET  /api/queues/atendimento-atual
 GET  /api/queues/em-atendimento
 GET  /api/queues/:senha_id/retomar

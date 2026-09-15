@@ -24,6 +24,7 @@ Base da branch: `main` (`baa5c26`).
 | 8 | Entrada local sem SSO, atrás de `DEBUG` | ferramenta de dev | — |
 | 9 | `semear_demo` e `semear_carga` | ferramenta de dev | — |
 | 10 | 28 testes novos | teste | — |
+| 11 | Merge da `atualização-jhorlen` + detalhe dos indicadores paginado | integração | — |
 
 ---
 
@@ -171,6 +172,40 @@ alcançado.
 ordenação restrita, resumo (rede inteira, mesmos filtros, escopo por unidade) e
 o contrato de `unidade`.
 
+## 11. Merge da `atualização-jhorlen`
+
+A branch do Jhorlen (commit `d7b10de`, 09/09) entrou por **merge real**, com a
+autoria dele preservada. Ela partia da mesma base que esta (`baa5c26`) e junta
+sem conflito.
+
+O que ela trouxe:
+
+| Rota | O que faz |
+| --- | --- |
+| `GET /api/queues/atendimento-atual` | devolve a senha que o operador deixou aberta, montada como o `chamar-proximo` |
+| `GET /api/queues/em-atendimento` | senhas em atendimento na unidade, com quem atende e `pode_retomar` |
+| `GET /api/queues/:senha_id/retomar` | reabre uma senha **do próprio operador**; de outro, 404 |
+| `GET /api/queues/painel/:grupo` | registros por trás de cada número do painel do atendente |
+| `POST /api/queues/chamar-proximo` | agora devolve a senha já aberta em vez de chamar outra pessoa |
+
+O defeito que isso fecha: quem recarregava a página no meio de um atendimento
+deixava a senha presa em `EM_ATENDIMENTO`, e o próximo "Chamar próximo" puxava
+outra pessoa. O `select_for_update` no operador serializa chamadas do mesmo
+operador em abas diferentes.
+
+**Ajuste nosso por cima:** `/painel/:grupo` devolvia todos os registros de uma
+vez. Medido na base de carga, "casos em acompanhamento" do CRAS Centro deu
+**3.121 casos, 2,2 MB de JSON, 1,3 s** só para serializar. Passou a usar o mesmo
+envelope das outras listagens — `{ tipo, itens, total, pagina, por_pagina,
+paginas }` —, e os testes dele passaram a comparar o número do painel com
+`total`, não com o tamanho da página. Um teste novo confere o corte
+(`limit=1&page=2`).
+
+`/em-atendimento` continua lista simples: são as senhas abertas de uma unidade,
+um conjunto pequeno por natureza.
+
+Testes: de 112 para **125** (12 do Jhorlen + 1 de paginação).
+
 ---
 
 ## Medições
@@ -195,7 +230,7 @@ Base de 100.046 cidadãos, 220.065 casos, 400 mil registros de auditoria
 git fetch origin && git checkout ajustes-marreira
 docker compose up -d
 docker compose run --rm api python manage.py migrate
-docker compose run --rm api python manage.py test testes --noinput   # 112 OK
+docker compose run --rm api python manage.py test testes --noinput   # 125 OK
 docker compose run --rm api python manage.py semear_demo             # base para clicar
 ```
 
