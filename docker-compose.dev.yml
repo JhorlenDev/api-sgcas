@@ -1,0 +1,38 @@
+# Ajustes de DESENVOLVIMENTO LOCAL. Nunca usar em producao.
+#
+# Nao se chama `docker-compose.override.yml` de proposito: o Compose carrega
+# esse nome sozinho, sem ninguem pedir. Com ele no repositorio, o
+# `docker compose up -d` que o README manda rodar em producao subiria o
+# runserver no lugar do gunicorn e publicaria o Postgres na rede. Com este
+# nome, ele so entra quando pedido:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# (ou, so na maquina de dev, COMPOSE_FILE no .env local — ver AJUSTES.md.)
+#
+# O que ajusta:
+# 1. O compose do repo nao publica a porta do Postgres, entao o host nao
+#    alcanca o banco como o README promete. Aqui publica, mas so no loopback
+#    (127.0.0.1): na interface de rede, qualquer maquina da mesma rede
+#    chegaria ao banco com a senha do .env.
+# 2. O container roda gunicorn com o codigo copiado na imagem: qualquer
+#    alteracao exigiria rebuild. Em dev vale o runserver com o fonte montado.
+# 3. O healthcheck do repo bate em /api/institutional/units/ (com barra), que
+#    nao e rota — devolve 404 e o container nunca fica "healthy".
+services:
+  postgres:
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5464}:5432'
+
+  api:
+    volumes:
+      - .:/app
+    command: python manage.py runserver 0.0.0.0:8000
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/auth/me | grep -qE '200|403'"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

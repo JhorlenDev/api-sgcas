@@ -228,6 +228,7 @@ Base de 100.046 cidadãos, 220.065 casos, 400 mil registros de auditoria
 
 ```bash
 git fetch origin && git checkout ajustes-marreira
+export COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml   # modo dev, ver abaixo
 docker compose up -d
 docker compose run --rm api python manage.py migrate
 docker compose run --rm api python manage.py test testes --noinput   # 125 OK
@@ -246,11 +247,32 @@ Levantado e registrado como issue, mas sem código nesta branch:
 | Issue | Por que não |
 | --- | --- |
 | [#1](https://github.com/JhorlenDev/api-sgcas/issues/1) `cadastrar_servicos` quebra na 2ª execução | Só contornado no seed (`semear_demo` só o chama com a base vazia). O comando em si segue com o defeito. |
-| [#2](https://github.com/JhorlenDev/api-sgcas/issues/2) compose não publica a porta do Postgres | Resolvido só localmente, em `docker-compose.override.yml`. O `docker-compose.yml` do repositório não foi tocado. |
-| [#3](https://github.com/JhorlenDev/api-sgcas/issues/3) healthcheck aponta para rota inexistente | Idem — corrigido apenas no override local. |
+| [#2](https://github.com/JhorlenDev/api-sgcas/issues/2) compose não publica a porta do Postgres | Resolvido só para desenvolvimento, em `docker-compose.dev.yml`. O `docker-compose.yml` do repositório não foi tocado. |
+| [#3](https://github.com/JhorlenDev/api-sgcas/issues/3) healthcheck aponta para rota inexistente | Idem — corrigido apenas no arquivo de dev. |
 | [#4](https://github.com/JhorlenDev/api-sgcas/issues/4) não existe endpoint de health | Decisão de arquitetura de vocês; deixei a sugestão na issue. |
 | [#5](https://github.com/JhorlenDev/api-sgcas/issues/5) catálogo de demandas vazio | O seed preenche, o comando oficial não. |
 
-O `docker-compose.override.yml` **é arquivo de desenvolvimento local**: publica
-a porta do Postgres, monta o fonte com `runserver` e corrige o healthcheck. Ele
-não altera o compose de produção.
+### `docker-compose.dev.yml` — e por que deixou de se chamar `override`
+
+É **arquivo de desenvolvimento**: publica a porta do Postgres, monta o fonte com
+`runserver` e corrige o healthcheck.
+
+Ele se chamava `docker-compose.override.yml`, e este documento dizia que ele
+"não altera o compose de produção". **Estava errado.** O Compose carrega um
+arquivo com esse nome sozinho, sem ninguém pedir. Se esta branch fosse para a
+`main` e o servidor rodasse o `docker compose up -d` que o README manda, produção
+subiria com o `runserver` no lugar do gunicorn, o código montado por cima da
+imagem e o **Postgres publicado em todas as interfaces** (`0.0.0.0:5464`).
+Achado na revisão de segurança de 15/09.
+
+Agora:
+
+- Com o nome `docker-compose.dev.yml`, só entra quando pedido
+  (`-f docker-compose.yml -f docker-compose.dev.yml`, ou `COMPOSE_FILE`).
+  `docker compose config` sem isso mostra o gunicorn e nenhuma porta de banco.
+- O Postgres de dev publica **só em `127.0.0.1`**. Antes, qualquer máquina da
+  mesma rede alcançava o banco com a senha do `.env`.
+- Na máquina de dev, `COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml`
+  (com `COMPOSE_PATH_SEPARATOR=:`) no `.env` local faz os comandos de sempre
+  carregarem o arquivo de dev sem `-f`. **Nunca pôr isso no `.env` de
+  produção** — é justamente o automatismo que o renome tirou.
