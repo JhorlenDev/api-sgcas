@@ -34,6 +34,7 @@ from apps.cidadaos.models import Cidadao
 from apps.comum.consultas import filtrar_iguais, filtrar_periodo, ordenar, paginar
 from apps.institucional.models import Servico, Unidade
 from apps.cidadaos.serializers import CidadaoSerializer, EntradaDoHistoricoSerializer
+from apps.contas.models import Operador
 from apps.contas.escopo import pode_acessar_unidade, resolver_filtro
 from apps.contas.permissoes import EquipeDeAtendimento, PodeConsultar, Recepcao
 
@@ -247,43 +248,118 @@ def fila(request):
     return Response(paginar(aguardando, request, SenhaSerializer, padrao=50))
 
 
+def _grupos_do_painel(operador):
+    hoje = timezone.localtime(timezone.now()).date()
+    unidade_id = operador.unidade_id
+    fila = SenhaDaFila.objects.filter(unidade_id=unidade_id) if unidade_id else SenhaDaFila.objects.none()
+    casos = Caso.vigentes.filter(unidade_id=unidade_id) if unidade_id else Caso.vigentes.none()
+    return {
+        'atendidos_hoje': fila.filter(atendido_por=operador, situacao=SenhaDaFila.Situacao.ATENDIDO, finalizado_em__date=hoje),
+        'aguardando_na_fila': fila.filter(situacao=SenhaDaFila.Situacao.AGUARDANDO),
+        'em_atendimento': fila.filter(situacao=SenhaDaFila.Situacao.EM_ATENDIMENTO),
+        'finalizados_hoje': casos.filter(tecnico=operador, fechado_em__date=hoje, situacao__in=[Caso.Situacao.CONCLUIDO, Caso.Situacao.ENCAMINHADO]),
+        'casos_em_acompanhamento': casos.exclude(situacao__in=[Caso.Situacao.CONCLUIDO, Caso.Situacao.CANCELADO]),
+    }
+
+
 @api_view(['GET'])
 @permission_classes([EquipeDeAtendimento])
 def painel_da_fila(request):
-    """Resumo da mesa do atendente."""
-    hoje = timezone.localtime(timezone.now()).date()
-    unidade_id = request.user.unidade_id
-    fila_da_unidade = SenhaDaFila.objects.filter(unidade_id=unidade_id) if unidade_id else SenhaDaFila.objects.none()
-    casos_da_unidade = Caso.vigentes.filter(unidade_id=unidade_id) if unidade_id else Caso.vigentes.none()
+    grupos = _grupos_do_painel(request.user)
+    ultimos = Caso.vigentes.filter(unidade_id=request.user.unidade_id, tecnico=request.user) if request.user.unidade_id else Caso.vigentes.none()
+    ultimos = ultimos.select_related('cidadao', 'unidade', 'tecnico', 'servico').order_by('-atualizado_em')[:8]
+    return Response({
+        **{nome: registros.count() for nome, registros in grupos.items()},
+        'ultimos_atendimentos': CasoSerializer(ultimos, many=True).data,
+    })
 
-    ultimos_casos = (
-        casos_da_unidade.filter(tecnico=request.user)
-        .select_related('cidadao', 'unidade', 'tecnico', 'servico')
-        .order_by('-atualizado_em')[:8]
+
+@api_view(['GET'])
+@permission_classes([EquipeDeAtendimento])
+def detalhes_do_painel(request, grupo):
+    registros = _grupos_do_painel(request.user).get(grupo)
+    if registros is None:
+        return Response({'detalhe': 'Indicador não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+    if grupo in ('finalizados_hoje', 'casos_em_acompanhamento'):
+        registros = registros.select_related('cidadao', 'unidade', 'tecnico', 'servico').order_by('-atualizado_em', 'id')
+        return Response({'tipo': 'casos', 'registros': CasoSerializer(registros, many=True).data})
+    registros = registros.select_related('cidadao').annotate(ordem_prioridade=_ordem_de_prioridade()).order_by('ordem_prioridade', 'criado_em', 'id')
+    return Response({'tipo': 'senhas', 'registros': SenhaSerializer(registros, many=True).data})
+
+
+def _senha_atual(operador):
+    return (
+        SenhaDaFila.objects.filter(
+            atendido_por=operador,
+            unidade_id=operador.unidade_id,
+            situacao=SenhaDaFila.Situacao.EM_ATENDIMENTO,
+        )
+        .order_by('chamado_em', 'criado_em', 'id')
+        .first()
     )
 
-    return Response({
-        'atendidos_hoje': fila_da_unidade.filter(
-            atendido_por=request.user,
-            situacao=SenhaDaFila.Situacao.ATENDIDO,
-            finalizado_em__date=hoje,
-        ).count(),
-        'aguardando_na_fila': fila_da_unidade.filter(
-            situacao=SenhaDaFila.Situacao.AGUARDANDO
-        ).count(),
-        'em_atendimento': fila_da_unidade.filter(
-            situacao=SenhaDaFila.Situacao.EM_ATENDIMENTO
-        ).count(),
-        'finalizados_hoje': casos_da_unidade.filter(
-            tecnico=request.user,
-            fechado_em__date=hoje,
-            situacao__in=[Caso.Situacao.CONCLUIDO, Caso.Situacao.ENCAMINHADO],
-        ).count(),
-        'casos_em_acompanhamento': casos_da_unidade.exclude(
-            situacao__in=[Caso.Situacao.CONCLUIDO, Caso.Situacao.CANCELADO]
-        ).count(),
-        'ultimos_atendimentos': CasoSerializer(ultimos_casos, many=True).data,
-    })
+
+def _montar_atendimento(senha, operador):
+    cidadao = senha.cidadao
+    caso = (
+        Caso.vigentes.filter(cidadao=cidadao, unidade_id=senha.unidade_id)
+        .exclude(situacao__in=[Caso.Situacao.CONCLUIDO, Caso.Situacao.CANCELADO])
+        .order_by('-aberto_em')
+        .first()
+    )
+    return {
+        'senha': SenhaSerializer(senha).data,
+        'cidadao': CidadaoSerializer(cidadao).data,
+        'caso': CasoSerializer(caso).data if caso else None,
+        'historico': EntradaDoHistoricoSerializer(
+            historico.do_cidadao(cidadao, operador), many=True
+        ).data,
+    }
+
+
+@api_view(['GET'])
+@permission_classes([EquipeDeAtendimento])
+def atendimentos_abertos(request):
+    senhas = (
+        SenhaDaFila.objects.filter(
+            unidade_id=request.user.unidade_id,
+            situacao=SenhaDaFila.Situacao.EM_ATENDIMENTO,
+        ).select_related('cidadao', 'atendido_por')
+        .order_by('chamado_em', 'criado_em', 'id')
+    ) if request.user.unidade_id else []
+    return Response([
+        {
+            **SenhaSerializer(senha).data,
+            'operador_nome': senha.atendido_por.nome if senha.atendido_por else None,
+            'pode_retomar': senha.atendido_por_id == request.user.pk,
+        }
+        for senha in senhas
+    ])
+
+
+@api_view(['GET'])
+@permission_classes([EquipeDeAtendimento])
+def recuperar_atendimento(request, senha_id):
+    senha = SenhaDaFila.objects.filter(
+        pk=senha_id,
+        unidade_id=request.user.unidade_id,
+        atendido_por=request.user,
+        situacao=SenhaDaFila.Situacao.EM_ATENDIMENTO,
+    ).first()
+    if senha is None:
+        return Response(
+            {'detalhe': 'Este atendimento foi finalizado ou não pertence a você nesta unidade.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return Response(_montar_atendimento(senha, request.user))
+
+
+@api_view(['GET'])
+@permission_classes([EquipeDeAtendimento])
+def atendimento_atual(request):
+    """Recupera a senha aberta do próprio operador, sem chamar outra pessoa."""
+    senha = _senha_atual(request.user)
+    return Response(_montar_atendimento(senha, request.user) if senha else None)
 
 
 @api_view(['POST'])
@@ -304,6 +380,12 @@ def chamar_proximo(request):
             {'detalhe': 'Seu usuário não tem unidade de lotação definida.'},
             status=status.HTTP_409_CONFLICT,
         )
+
+    # Serializa chamadas do mesmo operador, inclusive em abas diferentes.
+    Operador.objects.select_for_update().get(pk=operador.pk)
+    atual = _senha_atual(operador)
+    if atual:
+        return Response(_montar_atendimento(atual, operador))
 
     proxima = (
         SenhaDaFila.objects.select_for_update(skip_locked=True)
@@ -335,14 +417,7 @@ def chamar_proximo(request):
         caso.atualizado_em = agora
         caso.save(update_fields=['situacao', 'tecnico', 'atualizado_em'])
 
-    return Response({
-        'senha': SenhaSerializer(proxima).data,
-        'cidadao': CidadaoSerializer(cidadao).data,
-        'caso': CasoSerializer(caso).data if caso else None,
-        'historico': EntradaDoHistoricoSerializer(
-            historico.do_cidadao(cidadao, operador), many=True
-        ).data,
-    })
+    return Response(_montar_atendimento(proxima, operador))
 
 
 @api_view(['POST'])

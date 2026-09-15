@@ -11,6 +11,10 @@ recepcao_urlpatterns = [
 fila_urlpatterns = [
     path('', api.fila, name='fila'),
     path('painel', api.painel_da_fila, name='fila-painel'),
+    path('painel/<str:grupo>', api.detalhes_do_painel, name='fila-painel-detalhes'),
+    path('em-atendimento', api.atendimentos_abertos, name='fila-abertos'),
+    path('<str:senha_id>/retomar', api.recuperar_atendimento, name='fila-retomar'),
+    path('atendimento-atual', api.atendimento_atual, name='fila-atendimento-atual'),
     path('chamar-proximo', api.chamar_proximo, name='fila-chamar-proximo'),
     path('<str:senha_id>/nao-compareceu', api.nao_compareceu, name='fila-nao-compareceu'),
 ]

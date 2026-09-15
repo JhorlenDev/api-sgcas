@@ -119,3 +119,122 @@ class ChamarDaFila(CenarioBase):
             '/api/queues/chamar-proximo', {}, content_type='application/json'
         )
         self.assertEqual(resposta.status_code, 404)
+
+
+class RecuperarAtendimento(CenarioBase):
+    def abrir(self):
+        self.como(self.recepcionista).post(
+            '/api/reception/atendimento',
+            {'cidadao_id': self.cidadao.id, 'servico_id': self.servico.id, 'desfecho': 'ENCAMINHADO'},
+            content_type='application/json',
+        )
+        resposta = self.como(self.coordenador).post(
+            '/api/queues/chamar-proximo', {}, content_type='application/json',
+        )
+        self.assertEqual(resposta.status_code, 200)
+        return resposta.json()
+
+    def test_recupera_em_outra_sessao_sem_chamar_novamente(self):
+        chamado = self.abrir()
+        resposta = self.como(self.coordenador).get('/api/queues/atendimento-atual')
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.json(), chamado)
+
+    def test_nao_retorna_atendimento_de_outro_operador(self):
+        self.abrir()
+        self.tecnico.unidade = self.sul
+        self.tecnico.save(update_fields=['unidade'])
+        resposta = self.como(self.tecnico).get('/api/queues/atendimento-atual')
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIsNone(resposta.data)
+
+    def test_chamar_novamente_preserva_senha_e_horario(self):
+        chamado = self.abrir()
+        # Mesmo com mais uma pessoa aguardando, deve devolver a senha já aberta.
+        import uuid
+        pendente = SenhaDaFila.objects.get(pk=chamado['senha']['id'])
+        pendente.pk = str(uuid.uuid4())
+        pendente.senha = 'N999'
+        pendente.situacao = SenhaDaFila.Situacao.AGUARDANDO
+        pendente.atendido_por = None
+        pendente.chamado_em = None
+        pendente.save(force_insert=True)
+        resposta = self.como(self.coordenador).post(
+            '/api/queues/chamar-proximo', {}, content_type='application/json',
+        )
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.json(), chamado)
+        self.assertEqual(SenhaDaFila.objects.filter(situacao='EM_ATENDIMENTO').count(), 1)
+        pendente.refresh_from_db()
+        self.assertEqual(pendente.situacao, SenhaDaFila.Situacao.AGUARDANDO)
+
+    def test_finalizado_nao_e_recuperado(self):
+        chamado = self.abrir()
+        resposta = self.como(self.coordenador).post(
+            f"/api/queues/{chamado['senha']['id']}/nao-compareceu",
+            {}, content_type='application/json',
+        )
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIsNone(self.como(self.coordenador).get('/api/queues/atendimento-atual').data)
+
+    def test_sem_atendimento_retorna_vazio(self):
+        resposta = self.como(self.coordenador).get('/api/queues/atendimento-atual')
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIsNone(resposta.data)
+
+    def test_recepcionista_nao_acessa_atendimento(self):
+        resposta = self.como(self.recepcionista).get('/api/queues/atendimento-atual')
+        self.assertEqual(resposta.status_code, 403)
+
+
+    def test_lista_e_retoma_senha_escolhida(self):
+        chamado = self.abrir()
+        lista = self.como(self.coordenador).get('/api/queues/em-atendimento')
+        self.assertEqual(lista.status_code, 200)
+        self.assertEqual(lista.json()[0]['id'], chamado['senha']['id'])
+        self.assertTrue(lista.json()[0]['pode_retomar'])
+        resposta = self.como(self.coordenador).get(f"/api/queues/{chamado['senha']['id']}/retomar")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.json(), chamado)
+
+    def test_outro_operador_ve_responsavel_mas_nao_retoma(self):
+        chamado = self.abrir()
+        self.tecnico.unidade = self.sul
+        self.tecnico.save(update_fields=['unidade'])
+        lista = self.como(self.tecnico).get('/api/queues/em-atendimento').json()
+        self.assertFalse(lista[0]['pode_retomar'])
+        self.assertEqual(lista[0]['operador_nome'], self.coordenador.nome)
+        self.assertEqual(self.como(self.tecnico).get(f"/api/queues/{chamado['senha']['id']}/retomar").status_code, 404)
+
+    def test_outra_unidade_nao_lista_senha(self):
+        self.abrir()
+        self.assertEqual(self.como(self.tecnico).get('/api/queues/em-atendimento').json(), [])
+
+    def test_retomar_senha_finalizada_e_recusado(self):
+        chamado = self.abrir()
+        SenhaDaFila.objects.filter(pk=chamado['senha']['id']).update(situacao='ATENDIDO')
+        self.assertEqual(self.como(self.coordenador).get(f"/api/queues/{chamado['senha']['id']}/retomar").status_code, 404)
+
+
+    def test_detalhes_correspondem_aos_totais_e_ao_escopo(self):
+        chamado = self.abrir()
+        cliente = self.como(self.coordenador)
+        painel = cliente.get('/api/queues/painel').json()
+        for grupo in ('atendidos_hoje', 'aguardando_na_fila', 'em_atendimento', 'finalizados_hoje', 'casos_em_acompanhamento'):
+            resposta = cliente.get(f'/api/queues/painel/{grupo}')
+            self.assertEqual(resposta.status_code, 200)
+            self.assertEqual(len(resposta.json()['registros']), painel[grupo])
+            self.assertEqual(self.como(self.tecnico).get(f'/api/queues/painel/{grupo}').json()['registros'], [])
+        resposta = cliente.get('/api/queues/painel/casos_em_acompanhamento').json()
+        self.assertEqual(resposta['tipo'], 'casos')
+        self.assertEqual(resposta['registros'][0]['id'], chamado['caso']['id'])
+        self.assertEqual(cliente.get('/api/queues/painel/invalido').status_code, 404)
+
+    def test_detalhes_finalizados_hoje(self):
+        chamado = self.abrir()
+        cliente = self.como(self.coordenador)
+        resposta = cliente.post(f"/api/cases/{chamado['caso']['id']}/concluir", {'situacao': 'CONCLUIDO', 'relato': 'Teste concluído'}, content_type='application/json')
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(cliente.get('/api/queues/painel/atendidos_hoje').json()['registros'][0]['id'], chamado['senha']['id'])
+        self.assertEqual(cliente.get('/api/queues/painel/finalizados_hoje').json()['registros'][0]['id'], chamado['caso']['id'])
+        self.assertEqual(cliente.get('/api/queues/painel/casos_em_acompanhamento').json()['registros'], [])
