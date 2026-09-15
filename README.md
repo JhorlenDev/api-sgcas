@@ -126,6 +126,11 @@ endpoints que usam as colunas novas falham em tempo de requisição.
 | `POSTGRES_PASSWORD` | senha do banco |
 | `CORS_ORIGIN` / `FRONTEND_URL` | domínio do front |
 | `KEYCLOAK_CLIENT_SECRET` | segredo do cliente no SSO |
+| `DEV_LOGIN_ENABLED` | `false` (ou ausente) — liga a entrada sem senha de desenvolvimento |
+
+Não subir com o `docker-compose.dev.yml` nem com `COMPOSE_FILE` apontando para
+ele: é o arquivo de desenvolvimento (runserver, fonte montado, Postgres
+publicado). O `docker compose up -d` puro usa só o `docker-compose.yml`.
 
 ### Cifragem dos dados pessoais
 
@@ -394,9 +399,18 @@ docker compose run --rm api python manage.py semear_carga
 docker compose exec postgres psql -U sgcas -d sgcas -c "VACUUM ANALYZE;"
 ```
 
-Os dois são idempotentes e nunca apagam nada. Com `DEBUG=True` existe também
-`GET /api/auth/dev-login` (`?papel=RECEPCIONISTA`, `TECNICO`, …), que abre sessão
-local sem passar pelo Tefé Cidadão — a rota não é registrada fora de `DEBUG`.
+Os dois são idempotentes e nunca apagam nada. Com `DEBUG=True` **e**
+`DEV_LOGIN_ENABLED=true` existe também `GET /api/auth/dev-login`
+(`?papel=RECEPCIONISTA`, `TECNICO`, …), que abre sessão local sem passar pelo
+Tefé Cidadão. De `localhost` entra direto; de fora (túnel, outra máquina) só com
+`?chave=<DEV_LOGIN_CHAVE>`, e sem a chave responde 404. Fora dessas condições a
+rota não é registrada.
+
+Para desenvolver com o fonte montado e o Postgres acessível no host:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
 
 ## Testes
 

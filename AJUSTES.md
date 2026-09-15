@@ -25,6 +25,7 @@ Base da branch: `main` (`baa5c26`).
 | 9 | `semear_demo` e `semear_carga` | ferramenta de dev | — |
 | 10 | 28 testes novos | teste | — |
 | 11 | Merge da `atualização-jhorlen` + detalhe dos indicadores paginado | integração | — |
+| 12 | Revisão de segurança: travas do `dev-login` e compose de dev renomeado | segurança | — |
 
 ---
 
@@ -142,11 +143,11 @@ clona o repositório **para na tela de login** e não alcança nenhuma tela.
 `GET /api/auth/dev-login` cria ou reusa um operador local e abre a sessão dele.
 Aceita `papel`, `unidade`, `email`, `destino`.
 
-> **A rota só é registrada com `DEBUG=True`** (`apps/contas/urls.py`) e a view
-> ainda devolve 404 por conta própria se for alcançada de outro jeito. Em
-> produção ela não existe no roteador. Se esta branch for revisada para merge,
-> **este é o ponto que merece o olhar mais atento** — é uma decisão de
-> arquitetura sobre o repositório de vocês, não uma correção.
+> **A rota só é registrada com `DEBUG=True` e `DEV_LOGIN_ENABLED=true`**
+> (`apps/contas/urls.py`), e a view confere as duas de novo. Em produção ela não
+> existe no roteador. Se esta branch for revisada para merge, **este é o ponto
+> que merece o olhar mais atento** — é uma decisão de arquitetura sobre o
+> repositório de vocês, não uma correção. As travas extras estão no item 12.
 
 ## 9. Seeds
 
@@ -208,6 +209,62 @@ Testes: de 112 para **125** (12 do Jhorlen + 1 de paginação).
 
 ---
 
+## 12. Revisão de segurança (15/09)
+
+Revisão das mudanças da branch nos dois repositórios. **No código das rotas e
+das telas não apareceu vulnerabilidade** — as rotas novas da fila respeitam
+unidade e dono da senha, ordenação e filtros só aceitam o que está declarado,
+não há SQL cru nas rotas. Os dois achados reais eram de **ambiente de
+desenvolvimento**, e um deles iria para produção sem ninguém perceber.
+
+### `dev-login` alcançável por túnel público
+
+Com a API em `DEBUG=True` e o front exposto por um túnel da Cloudflare para
+teste externo, **qualquer um com o link virava ADMIN** — reproduzido: `302` com
+cookie de sessão. `email=` ainda permitia abrir sessão como um admin existente.
+E o `destino` era concatenado sem validação (`destino=@exemplo.com/x` levava
+para `exemplo.com`).
+
+Agora são três travas, todas precisam passar, senão **404** (a mesma resposta
+da rota inexistente, para quem sonda não saber que só falta a chave):
+
+| Trava | Configuração |
+| --- | --- |
+| Ambiente de dev | `DEBUG=True` **e** `DEV_LOGIN_ENABLED=true` — a rota nem é registrada sem os dois |
+| Origem | pedido de `localhost` entra direto, como antes |
+| Chave | de fora (túnel, outra máquina) só com `?chave=<DEV_LOGIN_CHAVE>`, comparada em tempo constante; chave vazia nunca libera |
+
+"De onde veio" sai do `X-Forwarded-Host`, que o proxy do Next preenche com o
+`Host` original — quem vem pelo túnel não controla esse valor. O IP não serve:
+com a API no Docker, local e túnel chegam do mesmo gateway. **Limite:** alguém
+na mesma rede local, acessando a porta direto, pode forjar `Host: localhost`;
+a chave protege o túnel, e a rede local é tratada como a máquina do dev.
+
+`destino` aceita só caminho do próprio front (começa com `/`, não com `//`).
+
+`testes/test_dev_login.py`: 11 casos — localhost sem chave, túnel sem chave /
+chave errada / chave certa, outra máquina da rede, chave vazia, sem a flag, sem
+DEBUG, destinos maliciosos e destino legítimo.
+
+**Conferido de ponta a ponta pelo túnel:** sem chave 404, chave errada 404,
+chave certa 302; `localhost` sem chave 302; IP da máquina na rede sem chave 404.
+
+### Compose de dev carregado sozinho em produção
+
+Ver "`docker-compose.dev.yml` — e por que deixou de se chamar `override`", no fim
+deste arquivo.
+
+### O que continua valendo enquanto houver túnel
+
+Com `DEBUG=True`, as páginas técnicas do Django (404 com o mapa de rotas, 500
+com traceback e o ambiente do processo) continuam alcançáveis pelo túnel. A
+chave do `dev-login` não muda isso. **Túnel público só enquanto estiver
+testando** — em produção, com `DEBUG=False`, essas páginas não existem.
+
+Testes: de 125 para **136**.
+
+---
+
 ## Medições
 
 Base de 100.046 cidadãos, 220.065 casos, 400 mil registros de auditoria
@@ -231,7 +288,7 @@ git fetch origin && git checkout ajustes-marreira
 export COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml   # modo dev, ver abaixo
 docker compose up -d
 docker compose run --rm api python manage.py migrate
-docker compose run --rm api python manage.py test testes --noinput   # 125 OK
+docker compose run --rm api python manage.py test testes --noinput   # 136 OK
 docker compose run --rm api python manage.py semear_demo             # base para clicar
 ```
 

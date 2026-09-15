@@ -11,9 +11,10 @@ urlpatterns = [
     path('me', api.eu, name='eu'),
 ]
 
-# Entrada local sem SSO. So no ambiente de desenvolvimento: em producao a
-# rota nem chega a existir. Ver apps/contas/dev_login.py.
-if settings.DEBUG:
+# Entrada local sem SSO. So no ambiente de desenvolvimento, e so quando pedida
+# explicitamente: sem DEBUG e DEV_LOGIN_ENABLED a rota nem chega a existir.
+# Ver apps/contas/dev_login.py.
+if settings.DEBUG and settings.DEV_LOGIN_ENABLED:
     urlpatterns.append(path('dev-login', dev_login.entrar_local, name='dev-login'))
 
 pedidos_urlpatterns = [

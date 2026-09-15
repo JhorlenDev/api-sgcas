@@ -196,3 +196,11 @@ KEYCLOAK_REDIRECT_URI = env(
     default='http://localhost:3000/api/auth/keycloak/callback',
 )
 FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:3000')
+
+# Entrada local sem SSO (apps/contas/dev_login.py). Precisa de DEBUG **e** desta
+# flag: DEBUG sozinho era trava fraca demais para uma porta que abre sessão de
+# ADMIN — um DEBUG=True esquecido, ou um túnel público, bastava para expô-la.
+DEV_LOGIN_ENABLED = env.bool('DEV_LOGIN_ENABLED', default=False)
+# Chave exigida quando o pedido NÃO vem de localhost (túnel, rede). Vazia, só o
+# localhost entra. Gere com: python -c "import secrets; print(secrets.token_urlsafe(32))"
+DEV_LOGIN_CHAVE = env('DEV_LOGIN_CHAVE', default='')
