@@ -84,6 +84,18 @@ class BeneficioEventualSerializer(serializers.ModelSerializer):
         return dict(BeneficioEventual.Tipo.choices).get(obj.tipo, obj.tipo)
 
 
+class NovoBeneficioEventualSerializer(serializers.Serializer):
+    nome_da_pessoa = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    tipo = serializers.ChoiceField(choices=BeneficioEventual.Tipo.choices)
+    tipo_outro = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    descricao = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate(self, dados):
+        if dados['tipo'] == BeneficioEventual.Tipo.OUTROS and not (dados.get('tipo_outro') or '').strip():
+            raise serializers.ValidationError({'tipo_outro': 'Informe qual é o tipo do benefício.'})
+        return dados
+
+
 class AcaoItineranteSerializer(serializers.ModelSerializer):
     unidade_nome = serializers.CharField(source='unidade.nome', read_only=True)
     responsavel_nome = serializers.CharField(source='responsavel.nome', read_only=True)
@@ -183,6 +195,10 @@ class NovoEncaminhamentoSerializer(serializers.Serializer):
                 'Informe a unidade de destino OU o destino externo — um dos dois.'
             )
         return dados
+
+
+class NovoEncaminhamentoDoCidadaoSerializer(NovoEncaminhamentoSerializer):
+    caso_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
 
 class ConclusaoSerializer(serializers.Serializer):
