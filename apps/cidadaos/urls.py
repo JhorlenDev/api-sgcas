@@ -10,6 +10,7 @@ urlpatterns = [
     path('<str:cidadao_id>/beneficios', api.registrar_beneficio, name='cidadao-registrar-beneficio'),
     path('<str:cidadao_id>/encaminhamentos', api.registrar_encaminhamento, name='cidadao-registrar-encaminhamento'),
     path('<str:cidadao_id>/historico', api.historico_do_cidadao, name='cidadao-historico'),
+    path('<str:cidadao_id>/imprimir', api.imprimir_prontuario, name='cidadao-imprimir-prontuario'),
     path('<str:cidadao_id>/anexos', api.anexos, name='cidadao-anexos'),
     path('<str:cidadao_id>/anexos/<str:anexo_id>', api.baixar_anexo, name='anexo-baixar'),
     path('<str:cidadao_id>/anexos/<str:anexo_id>/remover', api.remover_anexo, name='anexo-remover'),
