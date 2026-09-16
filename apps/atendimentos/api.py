@@ -451,11 +451,21 @@ def nao_compareceu(request, senha_id: str):
 @permission_classes([PodeConsultar])
 def casos(request):
     escopo = resolver_filtro(request.user, request.query_params.get('unidade'))
-    consulta = Caso.vigentes.filter(**escopo).select_related('cidadao', 'unidade', 'tecnico')
+    consulta = Caso.vigentes.filter(**escopo).select_related('cidadao', 'unidade', 'tecnico', 'servico')
 
     situacao = request.query_params.get('situacao')
     if situacao:
         consulta = consulta.filter(situacao=situacao)
+
+    origem = request.query_params.get('origem')
+    if origem == 'sede':
+        consulta = consulta.filter(acao_itinerante__isnull=True)
+    elif origem == 'itinerante':
+        consulta = consulta.filter(acao_itinerante__isnull=False)
+
+    acao_itinerante = request.query_params.get('acao_itinerante')
+    if acao_itinerante:
+        consulta = consulta.filter(acao_itinerante_id=acao_itinerante)
 
     cidadao = request.query_params.get('cidadao')
     if cidadao:
@@ -586,7 +596,10 @@ def acoes_itinerantes(request):
     """Ações em campo da unidade — listar e criar."""
     if request.method == 'GET':
         escopo = resolver_filtro(request.user, request.query_params.get('unidade'))
-        consulta = AcaoItinerante.vigentes.filter(**escopo).select_related('unidade', 'responsavel')
+        consulta = AcaoItinerante.vigentes.filter(**escopo)
+        if request.query_params.get('compacto') == '1':
+            return Response(list(consulta.order_by('-data').values('id', 'titulo', 'local', 'data')))
+        consulta = consulta.select_related('unidade', 'responsavel')
         return Response(AcaoItineranteSerializer(consulta, many=True).data)
 
     if request.user.unidade_id is None:

@@ -15,6 +15,8 @@ class CasoSerializer(serializers.ModelSerializer):
     unidade_nome = serializers.CharField(source='unidade.nome', read_only=True)
     tecnico_nome = serializers.CharField(source='tecnico.nome', read_only=True, default=None)
     servico_nome = serializers.CharField(source='servico.nome', read_only=True, default=None)
+    acao_itinerante_titulo = serializers.SerializerMethodField()
+    acao_itinerante_local = serializers.SerializerMethodField()
 
     class Meta:
         model = Caso
@@ -22,8 +24,21 @@ class CasoSerializer(serializers.ModelSerializer):
             'id', 'protocolo', 'situacao', 'prioridade', 'descricao',
             'cidadao', 'cidadao_nome', 'unidade', 'unidade_nome',
             'tecnico', 'tecnico_nome', 'servico', 'servico_nome',
+            'acao_itinerante', 'acao_itinerante_titulo', 'acao_itinerante_local',
             'aberto_em', 'fechado_em',
         ]
+
+    def get_acao_itinerante_titulo(self, obj):
+        if not obj.acao_itinerante_id:
+            return None
+        acao = AcaoItinerante.vigentes.filter(id=obj.acao_itinerante_id).values('titulo').first()
+        return acao['titulo'] if acao else None
+
+    def get_acao_itinerante_local(self, obj):
+        if not obj.acao_itinerante_id:
+            return None
+        acao = AcaoItinerante.vigentes.filter(id=obj.acao_itinerante_id).values('local').first()
+        return acao['local'] if acao else None
 
 
 class SenhaSerializer(serializers.ModelSerializer):
