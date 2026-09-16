@@ -3,6 +3,7 @@ from rest_framework import serializers
 from apps.atendimentos.models import (
     AcaoItinerante,
     AtendimentoDeRecepcao,
+    BeneficioEventual,
     Caso,
     Encaminhamento,
     SenhaDaFila,
@@ -63,6 +64,24 @@ class AtendimentoDeRecepcaoSerializer(serializers.ModelSerializer):
         if obj.caso_id and obj.caso and obj.caso.unidade_id:
             return obj.caso.unidade.nome
         return obj.unidade.nome if obj.unidade_id else 'Fila'
+
+
+class BeneficioEventualSerializer(serializers.ModelSerializer):
+    cidadao_nome = serializers.CharField(source='cidadao.nome', read_only=True)
+    unidade_nome = serializers.CharField(source='unidade.nome', read_only=True, default=None)
+    registrado_por_nome = serializers.CharField(source='registrado_por.nome', read_only=True, default=None)
+    tipo_rotulo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BeneficioEventual
+        fields = [
+            'id', 'cidadao', 'cidadao_nome', 'nome_da_pessoa', 'tipo', 'tipo_rotulo',
+            'tipo_outro', 'descricao', 'registrado_por', 'registrado_por_nome',
+            'unidade', 'unidade_nome', 'criado_em', 'atualizado_em',
+        ]
+
+    def get_tipo_rotulo(self, obj):
+        return dict(BeneficioEventual.Tipo.choices).get(obj.tipo, obj.tipo)
 
 
 class AcaoItineranteSerializer(serializers.ModelSerializer):

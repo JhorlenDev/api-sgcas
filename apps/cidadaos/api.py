@@ -14,6 +14,20 @@ from rest_framework.decorators import api_view, parser_classes, permission_class
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
+from apps.atendimentos.models import (
+    AtendimentoDeRecepcao,
+    BeneficioEventual,
+    Caso,
+    Encaminhamento,
+    SenhaDaFila,
+)
+from apps.atendimentos.serializers import (
+    AtendimentoDeRecepcaoSerializer,
+    BeneficioEventualSerializer,
+    CasoSerializer,
+    EncaminhamentoSerializer,
+    SenhaSerializer,
+)
 from apps.atendimentos import historico
 from apps.auditoria.redacao import redigir
 from apps.cidadaos.models import Cidadao
@@ -117,6 +131,62 @@ def historico_do_cidadao(request, cidadao_id: str):
     return Response({
         'cidadao': CidadaoNaListaSerializer(cidadao).data,
         'entradas': EntradaDoHistoricoSerializer(entradas, many=True).data,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([EquipeDeAtendimento])
+def prontuario(request, cidadao_id: str):
+    """Resumo completo do prontuário para a tela de detalhe do cidadão."""
+    cidadao = Cidadao.vigentes.filter(id=cidadao_id).first()
+    if cidadao is None:
+        return Response({'detalhe': 'Cidadão não encontrado'}, status=status.HTTP_404_NOT_FOUND)
+
+    casos = (
+        Caso.vigentes.filter(cidadao=cidadao)
+        .select_related('cidadao', 'unidade', 'tecnico', 'servico')
+        .order_by('-aberto_em')[:50]
+    )
+    atendimentos = (
+        AtendimentoDeRecepcao.objects.filter(cidadao=cidadao)
+        .select_related('cidadao', 'unidade', 'atendido_por', 'caso', 'caso__unidade')
+        .order_by('-criado_em')[:50]
+    )
+    beneficios = (
+        BeneficioEventual.vigentes.filter(cidadao=cidadao)
+        .select_related('cidadao', 'unidade', 'registrado_por')
+        .order_by('-criado_em')[:50]
+    )
+    encaminhamentos = (
+        Encaminhamento.objects.filter(caso__cidadao=cidadao)
+        .select_related('caso', 'unidade_destino', 'encaminhado_por')
+        .order_by('-criado_em')[:50]
+    )
+    senhas = (
+        SenhaDaFila.objects.filter(cidadao=cidadao)
+        .select_related('cidadao', 'unidade', 'atendido_por')
+        .order_by('-criado_em')[:50]
+    )
+    entradas = historico.do_cidadao(cidadao, request.user)
+
+    anexos = [
+        {k: v for k, v in anexo.items() if k not in ('arquivo', 'miniatura')}
+        for anexo in (cidadao.anexos or [])
+    ]
+
+    return Response({
+        'cidadao': CidadaoSerializer(cidadao).data,
+        'historico': EntradaDoHistoricoSerializer(entradas, many=True).data,
+        'casos': CasoSerializer(casos, many=True).data,
+        'atendimentos_recepcao': AtendimentoDeRecepcaoSerializer(atendimentos, many=True).data,
+        'beneficios_eventuais': BeneficioEventualSerializer(beneficios, many=True).data,
+        'encaminhamentos': EncaminhamentoSerializer(encaminhamentos, many=True).data,
+        'senhas': SenhaSerializer(senhas, many=True).data,
+        'anexos': anexos,
+        'membros_da_familia': cidadao.membros_da_familia or [],
+        'socioeconomico': cidadao.socioeconomico or {},
+        'documentos': cidadao.documentos or {},
+        'endereco_detalhado': cidadao.endereco_detalhado or {},
     })
 
 

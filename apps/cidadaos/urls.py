@@ -6,6 +6,7 @@ urlpatterns = [
     path('', api.buscar, name='cidadaos-buscar'),
     path('novo', api.cadastrar, name='cidadao-cadastrar'),
     path('<str:cidadao_id>', api.detalhar, name='cidadao-detalhe'),
+    path('<str:cidadao_id>/prontuario', api.prontuario, name='cidadao-prontuario'),
     path('<str:cidadao_id>/historico', api.historico_do_cidadao, name='cidadao-historico'),
     path('<str:cidadao_id>/anexos', api.anexos, name='cidadao-anexos'),
     path('<str:cidadao_id>/anexos/<str:anexo_id>', api.baixar_anexo, name='anexo-baixar'),
