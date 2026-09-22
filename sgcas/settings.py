@@ -115,12 +115,19 @@ USE_TZ = True
 # cookie seguro impediria qualquer sessão de funcionar localmente.
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
+    # O health check chega por HTTP de dentro do container, sem proxy na frente:
+    # redirecionado para https, nunca responderia 200.
+    SECURE_REDIRECT_EXEMPT = [r'^api/health$']
     SECURE_HSTS_SECONDS = 60 * 60 * 24 * 365
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Em producao o front e a API respondem por HTTPS na Cloudflare, e o Django
+# recusa POST cuja origem nao esteja listada aqui.
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
 
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
